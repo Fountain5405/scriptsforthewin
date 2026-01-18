@@ -11,6 +11,7 @@
 #   --runs N    Number of benchmark runs per version (default: 100)
 #   --nonces N  Number of nonces per run (default: 1000000)
 #   --no-msr    Disable MSR optimizations
+#   --old-cpu   Old CPU mode (no RAPL, no MSR, software AES)
 
 set -e
 set -o pipefail
@@ -21,6 +22,8 @@ NUM_RUNS=100
 NONCES=1000000
 # MSR optimizations enabled by default
 MSR_ENABLED=1
+# Old CPU mode (disables RAPL, MSR, uses software AES)
+OLD_CPU=0
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -37,16 +40,22 @@ while [[ $# -gt 0 ]]; do
             MSR_ENABLED=0
             shift
             ;;
+        --old-cpu)
+            OLD_CPU=1
+            MSR_ENABLED=0
+            shift
+            ;;
         --help|-h)
             echo "Usage: sudo $0 [OPTIONS]"
             echo "  --runs N, -r N    Number of benchmark runs per version (default: 100)"
             echo "  --nonces N, -n N  Number of nonces per run (default: 1000000)"
             echo "  --no-msr          Disable MSR optimizations"
+            echo "  --old-cpu         Old CPU mode (no RAPL, no MSR, software AES)"
             exit 0
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: sudo $0 [--runs N] [--nonces N] [--no-msr]"
+            echo "Usage: sudo $0 [--runs N] [--nonces N] [--no-msr] [--old-cpu]"
             exit 1
             ;;
     esac
@@ -87,6 +96,12 @@ detect_rapl() {
     echo "======================================"
     echo "Detecting RAPL power measurement..."
     echo "======================================"
+
+    # Skip RAPL for old CPUs
+    if [ "$OLD_CPU" -eq 1 ]; then
+        echo "  RAPL: Disabled (--old-cpu flag)"
+        return
+    fi
 
     # Check for Intel RAPL via powercap
     if [ -f "/sys/class/powercap/intel-rapl:0/energy_uj" ]; then
@@ -552,7 +567,13 @@ run_benchmarks() {
     V2_SUCCESS=0
     V1_SUCCESS=0
 
-    BASE_CMD="./randomx-benchmark --mine --jit --largePages --threads $OPTIMAL_THREADS --affinity $AFFINITY_MASK --init $INIT_THREADS --nonces $NONCES --avx2"
+    # Build base command
+    if [ "$OLD_CPU" -eq 1 ]; then
+        # Old CPU: software AES, no AVX2, no affinity
+        BASE_CMD="./randomx-benchmark --mine --jit --largePages --threads $OPTIMAL_THREADS --init $INIT_THREADS --nonces $NONCES --softAes"
+    else
+        BASE_CMD="./randomx-benchmark --mine --jit --largePages --threads $OPTIMAL_THREADS --affinity $AFFINITY_MASK --init $INIT_THREADS --nonces $NONCES --avx2"
+    fi
 
     # Results file with timestamp
     RESULTS_FILE="$WORK_DIR/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
