@@ -208,6 +208,14 @@ check_dependencies_installed() {
         echo "  msr-tools (wrmsr): OK"
     fi
 
+    # Check for bc (calculator)
+    if ! command -v bc &> /dev/null; then
+        echo "  bc: NOT FOUND"
+        missing=1
+    else
+        echo "  bc: OK"
+    fi
+
     return $missing
 }
 
@@ -256,16 +264,16 @@ install_dependencies() {
     case $PKG_MANAGER in
         apt-get)
             apt-get update
-            $PKG_INSTALL git cmake build-essential msr-tools
+            $PKG_INSTALL git cmake build-essential msr-tools bc
             ;;
         dnf|yum)
-            $PKG_INSTALL git cmake gcc gcc-c++ make msr-tools
+            $PKG_INSTALL git cmake gcc gcc-c++ make msr-tools bc
             ;;
         pacman)
-            $PKG_INSTALL git cmake base-devel msr-tools
+            $PKG_INSTALL git cmake base-devel msr-tools bc
             ;;
         zypper)
-            $PKG_INSTALL git cmake gcc gcc-c++ make msr-tools
+            $PKG_INSTALL git cmake gcc gcc-c++ make msr-tools bc
             ;;
     esac
 
