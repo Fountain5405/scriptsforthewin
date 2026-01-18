@@ -759,6 +759,10 @@ display_results() {
     V1_MAX=$(echo "$V1_STATS" | cut -d' ' -f4)
     V1_COUNT=$(echo "$V1_STATS" | cut -d' ' -f5)
 
+    # Ensure non-empty hashrate values
+    [ -z "$V1_HASHRATE" ] && V1_HASHRATE=0
+    [ -z "$V2_HASHRATE" ] && V2_HASHRATE=0
+
     # Calculate VM+AES operations per second from hashrate
     # Using known constants from RandomX configuration.h
     if [ "$V1_HASHRATE" != "0" ] && [ -n "$V1_HASHRATE" ]; then
@@ -773,10 +777,16 @@ display_results() {
     fi
 
     # Get energy statistics (sum of all energy in microjoules)
-    V2_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {print sum}' "$V2_ENERGY_FILE" 2>/dev/null || echo "0")
-    V1_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {print sum}' "$V1_ENERGY_FILE" 2>/dev/null || echo "0")
-    V2_TOTAL_TIME=$(awk '{sum+=$1} END {print sum}' "$V2_TIME_FILE" 2>/dev/null || echo "0")
-    V1_TOTAL_TIME=$(awk '{sum+=$1} END {print sum}' "$V1_TIME_FILE" 2>/dev/null || echo "0")
+    V2_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {print sum+0}' "$V2_ENERGY_FILE" 2>/dev/null || echo "0")
+    V1_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {print sum+0}' "$V1_ENERGY_FILE" 2>/dev/null || echo "0")
+    V2_TOTAL_TIME=$(awk '{sum+=$1} END {print sum+0}' "$V2_TIME_FILE" 2>/dev/null || echo "0")
+    V1_TOTAL_TIME=$(awk '{sum+=$1} END {print sum+0}' "$V1_TIME_FILE" 2>/dev/null || echo "0")
+
+    # Ensure non-empty values
+    [ -z "$V2_TOTAL_ENERGY_UJ" ] && V2_TOTAL_ENERGY_UJ=0
+    [ -z "$V1_TOTAL_ENERGY_UJ" ] && V1_TOTAL_ENERGY_UJ=0
+    [ -z "$V2_TOTAL_TIME" ] && V2_TOTAL_TIME=0
+    [ -z "$V1_TOTAL_TIME" ] && V1_TOTAL_TIME=0
 
     # Convert to Joules
     V2_TOTAL_ENERGY_J=$(echo "scale=2; $V2_TOTAL_ENERGY_UJ / 1000000" | bc)
