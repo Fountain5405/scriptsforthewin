@@ -376,13 +376,32 @@ detect_optimal_settings() {
     TOTAL_PHYSICAL=$((PHYSICAL_CORES * SOCKETS))
 
     # Extract L3 cache size (e.g., "64 MiB" -> 64)
+    # Fall back to L2 cache for older CPUs without L3
     L3_CACHE_MB=$(lscpu | grep "L3 cache" | grep -oP ':\s*\K[\d]+' | head -1)
+    if [ -z "$L3_CACHE_MB" ] || [ "$L3_CACHE_MB" -eq 0 ] 2>/dev/null; then
+        # No L3 cache - try L2 (older CPUs like Core 2 Duo)
+        L2_CACHE_MB=$(lscpu | grep "L2 cache" | grep -oP ':\s*\K[\d]+' | head -1)
+        if [ -n "$L2_CACHE_MB" ] && [ "$L2_CACHE_MB" -gt 0 ] 2>/dev/null; then
+            CACHE_MB=$L2_CACHE_MB
+            CACHE_TYPE="L2"
+        else
+            # Fallback: assume enough cache for all cores
+            CACHE_MB=$((LOGICAL_CPUS * 2))
+            CACHE_TYPE="unknown"
+        fi
+    else
+        CACHE_MB=$L3_CACHE_MB
+        CACHE_TYPE="L3"
+    fi
 
-    # Each RandomX thread needs 2MB of L3 cache
-    MAX_THREADS_BY_CACHE=$((L3_CACHE_MB / 2))
+    # Each RandomX thread needs 2MB of cache
+    MAX_THREADS_BY_CACHE=$((CACHE_MB / 2))
+    # Ensure at least 1 thread
+    [ "$MAX_THREADS_BY_CACHE" -lt 1 ] && MAX_THREADS_BY_CACHE=1
 
     # Optimal threads is the minimum of logical CPUs and cache-limited threads
     OPTIMAL_THREADS=$((LOGICAL_CPUS < MAX_THREADS_BY_CACHE ? LOGICAL_CPUS : MAX_THREADS_BY_CACHE))
+    [ "$OPTIMAL_THREADS" -lt 1 ] && OPTIMAL_THREADS=1
 
     # Init threads = all logical CPUs for fastest dataset initialization
     INIT_THREADS=$LOGICAL_CPUS
@@ -394,7 +413,7 @@ detect_optimal_settings() {
     echo "  CPU: $(lscpu | grep 'Model name' | sed 's/Model name:\s*//')"
     echo "  Logical CPUs: $LOGICAL_CPUS"
     echo "  Physical cores: $TOTAL_PHYSICAL"
-    echo "  L3 Cache: ${L3_CACHE_MB} MB"
+    echo "  ${CACHE_TYPE} Cache: ${CACHE_MB} MB"
     echo "  Max threads by cache: $MAX_THREADS_BY_CACHE"
     echo "  Optimal mining threads: $OPTIMAL_THREADS"
     echo "  Init threads: $INIT_THREADS"
