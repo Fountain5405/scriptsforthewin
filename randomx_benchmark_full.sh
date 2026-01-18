@@ -833,7 +833,7 @@ display_results() {
         V1_REL_WORK_JOULE="100.0"
         V2_REL_WORK_JOULE=$(echo "scale=1; ($V2_VMAES_PER_JOULE / $V1_VMAES_PER_JOULE) * 100" | bc)
     else
-        V1_REL_WORK_JOULE="100.0"
+        V1_REL_WORK_JOULE="N/A"
         V2_REL_WORK_JOULE="N/A"
     fi
 
@@ -900,12 +900,20 @@ display_results() {
         echo ""
         echo "### RandomX v2 Benchmark Results"
         echo ""
-        echo "**$CPU_MODEL @ ${V1_AVG_POWER}W**"
+        if [ "$V1_AVG_POWER" != "N/A" ] && [ "$V1_AVG_POWER" != "0" ] && [ -n "$V1_AVG_POWER" ]; then
+            echo "**$CPU_MODEL @ ${V1_AVG_POWER}W**"
+        else
+            echo "**$CPU_MODEL**"
+        fi
         echo ""
         echo "| Algorithm | Hashrate | Relative Speed | Hash/Joule | VM+AES/s | VM+AES/Joule | Relative Work/Joule |"
         echo "|-----------|----------|----------------|------------|----------|--------------|---------------------|"
-        echo "| RandomX v1 | $V1_HASHRATE | ${V1_REL_SPEED}% | $V1_HASH_PER_JOULE | $V1_VMAES_FMT | $V1_VMAES_J_FMT | ${V1_REL_WORK_JOULE}% |"
-        echo "| RandomX v2 | $V2_HASHRATE | ${V2_REL_SPEED}% | $V2_HASH_PER_JOULE | $V2_VMAES_FMT | $V2_VMAES_J_FMT | ${V2_REL_WORK_JOULE}% |"
+        # Format relative work/joule with % only if not N/A
+        V1_REL_WORK_FMT="${V1_REL_WORK_JOULE}"; [ "$V1_REL_WORK_JOULE" != "N/A" ] && V1_REL_WORK_FMT="${V1_REL_WORK_JOULE}%"
+        V2_REL_WORK_FMT="${V2_REL_WORK_JOULE}"; [ "$V2_REL_WORK_JOULE" != "N/A" ] && V2_REL_WORK_FMT="${V2_REL_WORK_JOULE}%"
+
+        echo "| RandomX v1 | $V1_HASHRATE | ${V1_REL_SPEED}% | $V1_HASH_PER_JOULE | $V1_VMAES_FMT | $V1_VMAES_J_FMT | $V1_REL_WORK_FMT |"
+        echo "| RandomX v2 | $V2_HASHRATE | ${V2_REL_SPEED}% | $V2_HASH_PER_JOULE | $V2_VMAES_FMT | $V2_VMAES_J_FMT | $V2_REL_WORK_FMT |"
         echo ""
         echo "**Config:** threads=$OPTIMAL_THREADS, affinity=$AFFINITY_MASK, init=$INIT_THREADS"
         echo ""
