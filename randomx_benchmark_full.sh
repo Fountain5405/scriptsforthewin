@@ -9,6 +9,7 @@
 #
 # Usage: sudo ./randomx_benchmark_full.sh [OPTIONS]
 #   --runs N    Number of benchmark runs per version (default: 100)
+#   --nonces N  Number of nonces per run (default: 1000000)
 #   --no-msr    Disable MSR optimizations
 
 set -e
@@ -16,6 +17,8 @@ set -o pipefail
 
 # Default number of runs
 NUM_RUNS=100
+# Default nonces per run
+NONCES=1000000
 # MSR optimizations enabled by default
 MSR_ENABLED=1
 
@@ -26,6 +29,10 @@ while [[ $# -gt 0 ]]; do
             NUM_RUNS="$2"
             shift 2
             ;;
+        --nonces|-n)
+            NONCES="$2"
+            shift 2
+            ;;
         --no-msr)
             MSR_ENABLED=0
             shift
@@ -33,12 +40,13 @@ while [[ $# -gt 0 ]]; do
         --help|-h)
             echo "Usage: sudo $0 [OPTIONS]"
             echo "  --runs N, -r N    Number of benchmark runs per version (default: 100)"
+            echo "  --nonces N, -n N  Number of nonces per run (default: 1000000)"
             echo "  --no-msr          Disable MSR optimizations"
             exit 0
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: sudo $0 [--runs N] [--no-msr]"
+            echo "Usage: sudo $0 [--runs N] [--nonces N] [--no-msr]"
             exit 1
             ;;
     esac
@@ -529,7 +537,7 @@ run_benchmarks() {
     V2_SUCCESS=0
     V1_SUCCESS=0
 
-    BASE_CMD="./randomx-benchmark --mine --jit --largePages --threads $OPTIMAL_THREADS --affinity $AFFINITY_MASK --init $INIT_THREADS --nonces 1000000 --avx2"
+    BASE_CMD="./randomx-benchmark --mine --jit --largePages --threads $OPTIMAL_THREADS --affinity $AFFINITY_MASK --init $INIT_THREADS --nonces $NONCES --avx2"
 
     # Results file with timestamp
     RESULTS_FILE="$WORK_DIR/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
