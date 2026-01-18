@@ -743,6 +743,13 @@ calc_stats() {
 }
 
 display_results() {
+    # Helper to check if value is a valid positive number
+    is_valid_number() {
+        local val="$1"
+        # Check if non-empty and is a positive number (int or float)
+        [[ -n "$val" && "$val" =~ ^[0-9]*\.?[0-9]+$ && "$val" != "0" && "$val" != "0.00" && "$val" != ".00" ]]
+    }
+
     # Get hashrate statistics
     V2_STATS=$(calc_stats "$V2_HASHRATES_FILE")
     V1_STATS=$(calc_stats "$V1_HASHRATES_FILE")
@@ -793,44 +800,51 @@ display_results() {
     V1_TOTAL_ENERGY_J=$(echo "scale=2; $V1_TOTAL_ENERGY_UJ / 1000000" | bc)
 
     # Calculate average power (Watts)
-    if [ "$V2_TOTAL_TIME" != "0" ] && [ -n "$V2_TOTAL_TIME" ]; then
+    if is_valid_number "$V2_TOTAL_TIME" && is_valid_number "$V2_TOTAL_ENERGY_J"; then
         V2_AVG_POWER=$(echo "scale=2; $V2_TOTAL_ENERGY_J / $V2_TOTAL_TIME" | bc)
     else
         V2_AVG_POWER="N/A"
     fi
-    if [ "$V1_TOTAL_TIME" != "0" ] && [ -n "$V1_TOTAL_TIME" ]; then
+    if is_valid_number "$V1_TOTAL_TIME" && is_valid_number "$V1_TOTAL_ENERGY_J"; then
         V1_AVG_POWER=$(echo "scale=2; $V1_TOTAL_ENERGY_J / $V1_TOTAL_TIME" | bc)
     else
         V1_AVG_POWER="N/A"
     fi
 
+    # Validate power results
+    is_valid_number "$V2_AVG_POWER" || V2_AVG_POWER="N/A"
+    is_valid_number "$V1_AVG_POWER" || V1_AVG_POWER="N/A"
+
     # Calculate Hash/Joule (efficiency)
-    # Use average power for H/J calculation: H/J = Hashrate / Power
-    if [ "$V2_AVG_POWER" != "N/A" ] && [ "$V2_AVG_POWER" != "0" ]; then
+    if is_valid_number "$V2_AVG_POWER" && is_valid_number "$V2_HASHRATE"; then
         V2_HASH_PER_JOULE=$(echo "scale=2; $V2_HASHRATE / $V2_AVG_POWER" | bc)
+        is_valid_number "$V2_HASH_PER_JOULE" || V2_HASH_PER_JOULE="N/A"
     else
         V2_HASH_PER_JOULE="N/A"
     fi
-    if [ "$V1_AVG_POWER" != "N/A" ] && [ "$V1_AVG_POWER" != "0" ]; then
+    if is_valid_number "$V1_AVG_POWER" && is_valid_number "$V1_HASHRATE"; then
         V1_HASH_PER_JOULE=$(echo "scale=2; $V1_HASHRATE / $V1_AVG_POWER" | bc)
+        is_valid_number "$V1_HASH_PER_JOULE" || V1_HASH_PER_JOULE="N/A"
     else
         V1_HASH_PER_JOULE="N/A"
     fi
 
     # Calculate VM+AES/Joule
-    if [ "$V2_AVG_POWER" != "N/A" ] && [ "$V2_AVG_POWER" != "0" ] && [ "$V2_VMAES" != "0" ] && [ -n "$V2_VMAES" ]; then
+    if is_valid_number "$V2_AVG_POWER" && is_valid_number "$V2_VMAES"; then
         V2_VMAES_PER_JOULE=$(echo "scale=2; $V2_VMAES / $V2_AVG_POWER" | bc)
+        is_valid_number "$V2_VMAES_PER_JOULE" || V2_VMAES_PER_JOULE="N/A"
     else
         V2_VMAES_PER_JOULE="N/A"
     fi
-    if [ "$V1_AVG_POWER" != "N/A" ] && [ "$V1_AVG_POWER" != "0" ] && [ "$V1_VMAES" != "0" ] && [ -n "$V1_VMAES" ]; then
+    if is_valid_number "$V1_AVG_POWER" && is_valid_number "$V1_VMAES"; then
         V1_VMAES_PER_JOULE=$(echo "scale=2; $V1_VMAES / $V1_AVG_POWER" | bc)
+        is_valid_number "$V1_VMAES_PER_JOULE" || V1_VMAES_PER_JOULE="N/A"
     else
         V1_VMAES_PER_JOULE="N/A"
     fi
 
     # Calculate relative speed (V1 = 100%)
-    if [ "$V1_HASHRATE" != "0" ] && [ -n "$V1_HASHRATE" ]; then
+    if is_valid_number "$V1_HASHRATE" && is_valid_number "$V2_HASHRATE"; then
         V1_REL_SPEED="100.0"
         V2_REL_SPEED=$(echo "scale=1; ($V2_HASHRATE / $V1_HASHRATE) * 100" | bc)
     else
@@ -839,7 +853,7 @@ display_results() {
     fi
 
     # Calculate relative work/Joule (V1 = 100%)
-    if [ "$V1_VMAES_PER_JOULE" != "N/A" ] && [ "$V1_VMAES_PER_JOULE" != "0" ] && [ "$V2_VMAES_PER_JOULE" != "N/A" ]; then
+    if is_valid_number "$V1_VMAES_PER_JOULE" && is_valid_number "$V2_VMAES_PER_JOULE"; then
         V1_REL_WORK_JOULE="100.0"
         V2_REL_WORK_JOULE=$(echo "scale=1; ($V2_VMAES_PER_JOULE / $V1_VMAES_PER_JOULE) * 100" | bc)
     else
