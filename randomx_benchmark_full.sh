@@ -569,8 +569,8 @@ run_benchmarks() {
 
     # Build base command
     if [ "$OLD_CPU" -eq 1 ]; then
-        # Old CPU: software AES, no AVX2, no affinity
-        BASE_CMD="./randomx-benchmark --mine --jit --largePages --threads $OPTIMAL_THREADS --init $INIT_THREADS --nonces $NONCES --softAes"
+        # Old CPU: software AES, no AVX2
+        BASE_CMD="./randomx-benchmark --mine --jit --largePages --threads $OPTIMAL_THREADS --affinity $AFFINITY_MASK --init $INIT_THREADS --nonces $NONCES --softAes"
     else
         BASE_CMD="./randomx-benchmark --mine --jit --largePages --threads $OPTIMAL_THREADS --affinity $AFFINITY_MASK --init $INIT_THREADS --nonces $NONCES --avx2"
     fi
