@@ -5,9 +5,36 @@
 # - Applies MSR optimizations for AMD/Intel CPUs
 # - Runs benchmark comparison between v1 and v2
 # - Auto-detects optimal thread count and affinity
+# - Measures power consumption via RAPL
+#
+# Usage: sudo ./randomx_benchmark_full.sh [--runs N]
+#   --runs N    Number of benchmark runs per version (default: 100)
 
 set -e
 set -o pipefail
+
+# Default number of runs
+NUM_RUNS=100
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --runs|-r)
+            NUM_RUNS="$2"
+            shift 2
+            ;;
+        --help|-h)
+            echo "Usage: sudo $0 [--runs N]"
+            echo "  --runs N, -r N    Number of benchmark runs per version (default: 100)"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: sudo $0 [--runs N]"
+            exit 1
+            ;;
+    esac
+done
 
 REPO_URL="https://github.com/SChernykh/RandomX.git"
 BRANCH="v2"
@@ -23,6 +50,82 @@ WORK_DIR="$REAL_HOME/randomx_benchmark"
 #############################
 # Helper Functions
 #############################
+
+# Power measurement target (Watts) - adjust for your CPU's TDP
+POWER_TARGET=100
+
+# RandomX VM operations per hash (from configuration.h)
+# PROGRAM_SIZE × PROGRAM_ITERATIONS × PROGRAM_COUNT
+V1_OPS_PER_HASH=$((256 * 2048 * 8))   # = 4,194,304
+V2_OPS_PER_HASH=$((384 * 2048 * 8))   # = 6,291,456
+
+#############################
+# RAPL Power Measurement
+#############################
+
+RAPL_PATH=""
+RAPL_AVAILABLE=0
+
+detect_rapl() {
+    echo ""
+    echo "======================================"
+    echo "Detecting RAPL power measurement..."
+    echo "======================================"
+
+    # Check for Intel RAPL via powercap
+    if [ -f "/sys/class/powercap/intel-rapl:0/energy_uj" ]; then
+        RAPL_PATH="/sys/class/powercap/intel-rapl:0"
+        RAPL_AVAILABLE=1
+        echo "  RAPL: Available (intel-rapl powercap)"
+
+        # Check max energy counter for overflow detection
+        if [ -f "$RAPL_PATH/max_energy_range_uj" ]; then
+            RAPL_MAX=$(cat "$RAPL_PATH/max_energy_range_uj")
+            echo "  Max energy range: $((RAPL_MAX / 1000000)) J"
+        fi
+    # Check for AMD RAPL
+    elif [ -f "/sys/class/powercap/amd-rapl:0/energy_uj" ]; then
+        RAPL_PATH="/sys/class/powercap/amd-rapl:0"
+        RAPL_AVAILABLE=1
+        echo "  RAPL: Available (amd-rapl powercap)"
+    else
+        echo "  RAPL: Not available"
+        echo "  Power measurement will be disabled."
+        echo "  To enable: ensure your kernel supports powercap and RAPL"
+    fi
+}
+
+# Read current energy in microjoules
+read_energy_uj() {
+    if [ $RAPL_AVAILABLE -eq 1 ]; then
+        cat "$RAPL_PATH/energy_uj"
+    else
+        echo "0"
+    fi
+}
+
+# Calculate energy difference handling overflow
+calc_energy_diff_uj() {
+    local start=$1
+    local end=$2
+
+    if [ $RAPL_AVAILABLE -eq 0 ]; then
+        echo "0"
+        return
+    fi
+
+    if [ "$end" -ge "$start" ]; then
+        echo $((end - start))
+    else
+        # Counter overflow occurred
+        local max=$(cat "$RAPL_PATH/max_energy_range_uj" 2>/dev/null || echo "0")
+        if [ "$max" -gt 0 ]; then
+            echo $((max - start + end))
+        else
+            echo "0"
+        fi
+    fi
+}
 
 check_root() {
     if [ "$EUID" -ne 0 ]; then
@@ -395,11 +498,17 @@ run_benchmarks() {
 
     # Results file with timestamp
     RESULTS_FILE="$WORK_DIR/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
+
+    # Temp files for metrics
     V2_HASHRATES_FILE=$(mktemp)
     V1_HASHRATES_FILE=$(mktemp)
+    V2_ENERGY_FILE=$(mktemp)
+    V1_ENERGY_FILE=$(mktemp)
+    V2_TIME_FILE=$(mktemp)
+    V1_TIME_FILE=$(mktemp)
 
     # Cleanup temp files on exit
-    trap "rm -f $V2_HASHRATES_FILE $V1_HASHRATES_FILE" EXIT
+    trap "rm -f $V2_HASHRATES_FILE $V1_HASHRATES_FILE $V2_ENERGY_FILE $V1_ENERGY_FILE $V2_TIME_FILE $V1_TIME_FILE" EXIT
 
     echo ""
     echo "Base command: $BASE_CMD"
@@ -410,17 +519,26 @@ run_benchmarks() {
     set +e
     set +o pipefail
 
-    # Run 100 times with --v2
-    echo "Testing with --v2 flag (100 runs)..."
+    # Run with --v2
+    echo "Testing with --v2 flag ($NUM_RUNS runs)..."
     echo ""
-    for i in $(seq 1 100); do
-        echo "--- Run $i/100 (v2) ---"
+    for i in $(seq 1 $NUM_RUNS); do
+        echo "--- Run $i/$NUM_RUNS (v2) ---"
         echo "Command: $BASE_CMD --v2"
 
         # Use temp file and tee for unbuffered streaming output
         TEMP_OUTPUT=$(mktemp)
+
+        # Record start energy and time
+        START_ENERGY=$(read_energy_uj)
+        START_TIME=$(date +%s.%N)
+
         $BASE_CMD --v2 2>&1 | tee "$TEMP_OUTPUT"
         EXIT_CODE=${PIPESTATUS[0]}
+
+        # Record end energy and time
+        END_TIME=$(date +%s.%N)
+        END_ENERGY=$(read_energy_uj)
 
         if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -ne 0 ]; then
             ((V2_SEGFAULTS++))
@@ -429,30 +547,53 @@ run_benchmarks() {
             ((V2_SUCCESS++))
             # Extract hashrate (looks for "Performance: X hashes per second")
             HASHRATE=$(grep -oP 'Performance:\s*[\d.]+' "$TEMP_OUTPUT" | grep -oP '[\d.]+')
+
             if [ -n "$HASHRATE" ]; then
                 echo "$HASHRATE" >> "$V2_HASHRATES_FILE"
             fi
-            echo ">>> Result: OK (Hashrate: $HASHRATE H/s)"
+
+            # Calculate and store energy/time
+            ENERGY_UJ=$(calc_energy_diff_uj "$START_ENERGY" "$END_ENERGY")
+            RUNTIME=$(echo "$END_TIME - $START_TIME" | bc)
+            echo "$ENERGY_UJ" >> "$V2_ENERGY_FILE"
+            echo "$RUNTIME" >> "$V2_TIME_FILE"
+
+            # Calculate power for this run
+            if [ "$ENERGY_UJ" -gt 0 ] && [ "$RAPL_AVAILABLE" -eq 1 ]; then
+                POWER_W=$(echo "scale=2; $ENERGY_UJ / 1000000 / $RUNTIME" | bc)
+                echo ">>> Result: OK (Hashrate: $HASHRATE H/s, Power: ${POWER_W}W)"
+            else
+                echo ">>> Result: OK (Hashrate: $HASHRATE H/s)"
+            fi
         fi
         rm -f "$TEMP_OUTPUT"
         echo ""
     done
 
     echo ""
-    echo "V2 testing complete. Crashes: $V2_SEGFAULTS / 100"
+    echo "V2 testing complete. Crashes: $V2_SEGFAULTS / $NUM_RUNS"
     echo ""
 
-    # Run 100 times without --v2
-    echo "Testing without --v2 flag (100 runs)..."
+    # Run without --v2
+    echo "Testing without --v2 flag ($NUM_RUNS runs)..."
     echo ""
-    for i in $(seq 1 100); do
-        echo "--- Run $i/100 (v1) ---"
+    for i in $(seq 1 $NUM_RUNS); do
+        echo "--- Run $i/$NUM_RUNS (v1) ---"
         echo "Command: $BASE_CMD"
 
         # Use temp file and tee for unbuffered streaming output
         TEMP_OUTPUT=$(mktemp)
+
+        # Record start energy and time
+        START_ENERGY=$(read_energy_uj)
+        START_TIME=$(date +%s.%N)
+
         $BASE_CMD 2>&1 | tee "$TEMP_OUTPUT"
         EXIT_CODE=${PIPESTATUS[0]}
+
+        # Record end energy and time
+        END_TIME=$(date +%s.%N)
+        END_ENERGY=$(read_energy_uj)
 
         if [ $EXIT_CODE -eq 139 ] || [ $EXIT_CODE -eq 134 ] || [ $EXIT_CODE -ne 0 ]; then
             ((V1_SEGFAULTS++))
@@ -461,10 +602,24 @@ run_benchmarks() {
             ((V1_SUCCESS++))
             # Extract hashrate (looks for "Performance: X hashes per second")
             HASHRATE=$(grep -oP 'Performance:\s*[\d.]+' "$TEMP_OUTPUT" | grep -oP '[\d.]+')
+
             if [ -n "$HASHRATE" ]; then
                 echo "$HASHRATE" >> "$V1_HASHRATES_FILE"
             fi
-            echo ">>> Result: OK (Hashrate: $HASHRATE H/s)"
+
+            # Calculate and store energy/time
+            ENERGY_UJ=$(calc_energy_diff_uj "$START_ENERGY" "$END_ENERGY")
+            RUNTIME=$(echo "$END_TIME - $START_TIME" | bc)
+            echo "$ENERGY_UJ" >> "$V1_ENERGY_FILE"
+            echo "$RUNTIME" >> "$V1_TIME_FILE"
+
+            # Calculate power for this run
+            if [ "$ENERGY_UJ" -gt 0 ] && [ "$RAPL_AVAILABLE" -eq 1 ]; then
+                POWER_W=$(echo "scale=2; $ENERGY_UJ / 1000000 / $RUNTIME" | bc)
+                echo ">>> Result: OK (Hashrate: $HASHRATE H/s, Power: ${POWER_W}W)"
+            else
+                echo ">>> Result: OK (Hashrate: $HASHRATE H/s)"
+            fi
         fi
         rm -f "$TEMP_OUTPUT"
         echo ""
@@ -509,45 +664,120 @@ calc_stats() {
 }
 
 display_results() {
-    # Get statistics
+    # Get hashrate statistics
     V2_STATS=$(calc_stats "$V2_HASHRATES_FILE")
     V1_STATS=$(calc_stats "$V1_HASHRATES_FILE")
 
-    V2_AVG=$(echo "$V2_STATS" | cut -d' ' -f1)
+    V2_HASHRATE=$(echo "$V2_STATS" | cut -d' ' -f1)
     V2_STDEV=$(echo "$V2_STATS" | cut -d' ' -f2)
     V2_MIN=$(echo "$V2_STATS" | cut -d' ' -f3)
     V2_MAX=$(echo "$V2_STATS" | cut -d' ' -f4)
     V2_COUNT=$(echo "$V2_STATS" | cut -d' ' -f5)
 
-    V1_AVG=$(echo "$V1_STATS" | cut -d' ' -f1)
+    V1_HASHRATE=$(echo "$V1_STATS" | cut -d' ' -f1)
     V1_STDEV=$(echo "$V1_STATS" | cut -d' ' -f2)
     V1_MIN=$(echo "$V1_STATS" | cut -d' ' -f3)
     V1_MAX=$(echo "$V1_STATS" | cut -d' ' -f4)
     V1_COUNT=$(echo "$V1_STATS" | cut -d' ' -f5)
 
-    # Calculate difference
-    if [ "$V1_AVG" != "0" ] && [ -n "$V1_AVG" ]; then
-        DIFF=$(awk "BEGIN { printf \"%.2f\", $V2_AVG - $V1_AVG }")
-        DIFF_PCT=$(awk "BEGIN { printf \"%.2f\", (($V2_AVG - $V1_AVG) / $V1_AVG) * 100 }")
+    # Calculate VM+AES operations per second from hashrate
+    # Using known constants from RandomX configuration.h
+    if [ "$V1_HASHRATE" != "0" ] && [ -n "$V1_HASHRATE" ]; then
+        V1_VMAES=$(echo "scale=0; $V1_HASHRATE * $V1_OPS_PER_HASH" | bc)
     else
-        DIFF="N/A"
-        DIFF_PCT="N/A"
+        V1_VMAES="0"
+    fi
+    if [ "$V2_HASHRATE" != "0" ] && [ -n "$V2_HASHRATE" ]; then
+        V2_VMAES=$(echo "scale=0; $V2_HASHRATE * $V2_OPS_PER_HASH" | bc)
+    else
+        V2_VMAES="0"
     fi
 
-    # Determine comparison result
-    if [ "$DIFF_PCT" != "N/A" ]; then
-        if (( $(echo "$DIFF > 0" | bc -l) )); then
-            COMPARISON="V2 is FASTER than V1"
-        elif (( $(echo "$DIFF < 0" | bc -l) )); then
-            COMPARISON="V2 is SLOWER than V1"
+    # Get energy statistics (sum of all energy in microjoules)
+    V2_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {print sum}' "$V2_ENERGY_FILE" 2>/dev/null || echo "0")
+    V1_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {print sum}' "$V1_ENERGY_FILE" 2>/dev/null || echo "0")
+    V2_TOTAL_TIME=$(awk '{sum+=$1} END {print sum}' "$V2_TIME_FILE" 2>/dev/null || echo "0")
+    V1_TOTAL_TIME=$(awk '{sum+=$1} END {print sum}' "$V1_TIME_FILE" 2>/dev/null || echo "0")
+
+    # Convert to Joules
+    V2_TOTAL_ENERGY_J=$(echo "scale=2; $V2_TOTAL_ENERGY_UJ / 1000000" | bc)
+    V1_TOTAL_ENERGY_J=$(echo "scale=2; $V1_TOTAL_ENERGY_UJ / 1000000" | bc)
+
+    # Calculate average power (Watts)
+    if [ "$V2_TOTAL_TIME" != "0" ] && [ -n "$V2_TOTAL_TIME" ]; then
+        V2_AVG_POWER=$(echo "scale=2; $V2_TOTAL_ENERGY_J / $V2_TOTAL_TIME" | bc)
+    else
+        V2_AVG_POWER="N/A"
+    fi
+    if [ "$V1_TOTAL_TIME" != "0" ] && [ -n "$V1_TOTAL_TIME" ]; then
+        V1_AVG_POWER=$(echo "scale=2; $V1_TOTAL_ENERGY_J / $V1_TOTAL_TIME" | bc)
+    else
+        V1_AVG_POWER="N/A"
+    fi
+
+    # Calculate Hash/Joule (efficiency)
+    # Use average power for H/J calculation: H/J = Hashrate / Power
+    if [ "$V2_AVG_POWER" != "N/A" ] && [ "$V2_AVG_POWER" != "0" ]; then
+        V2_HASH_PER_JOULE=$(echo "scale=2; $V2_HASHRATE / $V2_AVG_POWER" | bc)
+    else
+        V2_HASH_PER_JOULE="N/A"
+    fi
+    if [ "$V1_AVG_POWER" != "N/A" ] && [ "$V1_AVG_POWER" != "0" ]; then
+        V1_HASH_PER_JOULE=$(echo "scale=2; $V1_HASHRATE / $V1_AVG_POWER" | bc)
+    else
+        V1_HASH_PER_JOULE="N/A"
+    fi
+
+    # Calculate VM+AES/Joule
+    if [ "$V2_AVG_POWER" != "N/A" ] && [ "$V2_AVG_POWER" != "0" ] && [ "$V2_VMAES" != "0" ] && [ -n "$V2_VMAES" ]; then
+        V2_VMAES_PER_JOULE=$(echo "scale=2; $V2_VMAES / $V2_AVG_POWER" | bc)
+    else
+        V2_VMAES_PER_JOULE="N/A"
+    fi
+    if [ "$V1_AVG_POWER" != "N/A" ] && [ "$V1_AVG_POWER" != "0" ] && [ "$V1_VMAES" != "0" ] && [ -n "$V1_VMAES" ]; then
+        V1_VMAES_PER_JOULE=$(echo "scale=2; $V1_VMAES / $V1_AVG_POWER" | bc)
+    else
+        V1_VMAES_PER_JOULE="N/A"
+    fi
+
+    # Calculate relative speed (V1 = 100%)
+    if [ "$V1_HASHRATE" != "0" ] && [ -n "$V1_HASHRATE" ]; then
+        V1_REL_SPEED="100.0"
+        V2_REL_SPEED=$(echo "scale=1; ($V2_HASHRATE / $V1_HASHRATE) * 100" | bc)
+    else
+        V1_REL_SPEED="100.0"
+        V2_REL_SPEED="N/A"
+    fi
+
+    # Calculate relative work/Joule (V1 = 100%)
+    if [ "$V1_VMAES_PER_JOULE" != "N/A" ] && [ "$V1_VMAES_PER_JOULE" != "0" ] && [ "$V2_VMAES_PER_JOULE" != "N/A" ]; then
+        V1_REL_WORK_JOULE="100.0"
+        V2_REL_WORK_JOULE=$(echo "scale=1; ($V2_VMAES_PER_JOULE / $V1_VMAES_PER_JOULE) * 100" | bc)
+    else
+        V1_REL_WORK_JOULE="100.0"
+        V2_REL_WORK_JOULE="N/A"
+    fi
+
+    CPU_MODEL=$(lscpu | grep 'Model name' | sed 's/Model name:\s*//' | xargs)
+
+    # Format large numbers with scientific notation
+    format_sci() {
+        local val=$1
+        if [ "$val" = "N/A" ] || [ -z "$val" ] || [ "$val" = "0" ]; then
+            echo "N/A"
         else
-            COMPARISON="V2 and V1 have the same performance"
+            echo "$val" | awk '{
+                if ($1 >= 1e9) printf "%.2fe9", $1/1e9
+                else if ($1 >= 1e6) printf "%.2fe6", $1/1e6
+                else printf "%.2f", $1
+            }'
         fi
-    else
-        COMPARISON="N/A"
-    fi
+    }
 
-    CPU_MODEL=$(lscpu | grep 'Model name' | sed 's/Model name:\s*//')
+    V1_VMAES_FMT=$(format_sci "$V1_VMAES")
+    V2_VMAES_FMT=$(format_sci "$V2_VMAES")
+    V1_VMAES_J_FMT=$(format_sci "$V1_VMAES_PER_JOULE")
+    V2_VMAES_J_FMT=$(format_sci "$V2_VMAES_PER_JOULE")
 
     # Output results (terminal friendly)
     OUTPUT_RESULTS() {
@@ -557,34 +787,32 @@ display_results() {
         echo "======================================"
         echo "System: $CPU_MODEL"
         echo "Threads: $OPTIMAL_THREADS | Affinity: $AFFINITY_MASK | Init: $INIT_THREADS"
+        echo "Power Target: ${POWER_TARGET}W (configured)"
         echo ""
         echo "V2 (with --v2 flag):"
-        echo "  Crashes:   $V2_SEGFAULTS / 100"
-        echo "  Success:   $V2_SUCCESS / 100"
-        echo "  Hashrate Statistics (from $V2_COUNT successful runs):"
-        echo "    Average: $V2_AVG H/s"
-        echo "    Std Dev: $V2_STDEV H/s"
-        echo "    Min:     $V2_MIN H/s"
-        echo "    Max:     $V2_MAX H/s"
+        echo "  Crashes:       $V2_SEGFAULTS / $NUM_RUNS"
+        echo "  Success:       $V2_SUCCESS / $NUM_RUNS"
+        echo "  Avg Hashrate:  $V2_HASHRATE H/s"
+        echo "  Relative:      ${V2_REL_SPEED}%"
+        echo "  Avg Power:     ${V2_AVG_POWER}W"
+        echo "  Hash/Joule:    $V2_HASH_PER_JOULE"
+        echo "  VM+AES/s:      $V2_VMAES_FMT"
+        echo "  VM+AES/Joule:  $V2_VMAES_J_FMT"
         echo ""
         echo "V1 (without --v2 flag):"
-        echo "  Crashes:   $V1_SEGFAULTS / 100"
-        echo "  Success:   $V1_SUCCESS / 100"
-        echo "  Hashrate Statistics (from $V1_COUNT successful runs):"
-        echo "    Average: $V1_AVG H/s"
-        echo "    Std Dev: $V1_STDEV H/s"
-        echo "    Min:     $V1_MIN H/s"
-        echo "    Max:     $V1_MAX H/s"
+        echo "  Crashes:       $V1_SEGFAULTS / $NUM_RUNS"
+        echo "  Success:       $V1_SUCCESS / $NUM_RUNS"
+        echo "  Avg Hashrate:  $V1_HASHRATE H/s"
+        echo "  Relative:      ${V1_REL_SPEED}%"
+        echo "  Avg Power:     ${V1_AVG_POWER}W"
+        echo "  Hash/Joule:    $V1_HASH_PER_JOULE"
+        echo "  VM+AES/s:      $V1_VMAES_FMT"
+        echo "  VM+AES/Joule:  $V1_VMAES_J_FMT"
         echo ""
-        echo "======================================"
-        echo "COMPARISON (V2 vs V1)"
-        echo "======================================"
-        echo "  Hashrate Difference: $DIFF H/s ($DIFF_PCT%)"
-        echo "  $COMPARISON"
         echo "======================================"
     }
 
-    # GitHub markdown summary
+    # GitHub markdown summary - matches developer's table format
     GITHUB_SUMMARY() {
         echo ""
         echo "======================================"
@@ -593,18 +821,34 @@ display_results() {
         echo ""
         echo "### RandomX v2 Benchmark Results"
         echo ""
-        echo "**CPU:** $CPU_MODEL"
+        echo "**$CPU_MODEL @ ${V1_AVG_POWER}W**"
+        echo ""
+        echo "| Algorithm | Hashrate | Relative Speed | Hash/Joule | VM+AES/s | VM+AES/Joule | Relative Work/Joule |"
+        echo "|-----------|----------|----------------|------------|----------|--------------|---------------------|"
+        echo "| RandomX v1 | $V1_HASHRATE | ${V1_REL_SPEED}% | $V1_HASH_PER_JOULE | $V1_VMAES_FMT | $V1_VMAES_J_FMT | ${V1_REL_WORK_JOULE}% |"
+        echo "| RandomX v2 | $V2_HASHRATE | ${V2_REL_SPEED}% | $V2_HASH_PER_JOULE | $V2_VMAES_FMT | $V2_VMAES_J_FMT | ${V2_REL_WORK_JOULE}% |"
+        echo ""
         echo "**Config:** threads=$OPTIMAL_THREADS, affinity=$AFFINITY_MASK, init=$INIT_THREADS"
+        echo ""
+        echo "**Stability:** V1 crashes: $V1_SEGFAULTS/$NUM_RUNS, V2 crashes: $V2_SEGFAULTS/$NUM_RUNS"
+        echo ""
+        echo "---"
+        echo ""
+        echo "<details>"
+        echo "<summary>Detailed Statistics</summary>"
         echo ""
         echo "| Metric | V1 | V2 |"
         echo "|--------|----|----|"
-        echo "| Crashes | $V1_SEGFAULTS/100 | $V2_SEGFAULTS/100 |"
-        echo "| Avg Hashrate | $V1_AVG H/s | $V2_AVG H/s |"
-        echo "| Std Dev | $V1_STDEV H/s | $V2_STDEV H/s |"
-        echo "| Min | $V1_MIN H/s | $V2_MIN H/s |"
-        echo "| Max | $V1_MAX H/s | $V2_MAX H/s |"
+        echo "| Successful runs | $V1_COUNT | $V2_COUNT |"
+        echo "| Hashrate (avg) | $V1_HASHRATE H/s | $V2_HASHRATE H/s |"
+        echo "| Hashrate (std dev) | $V1_STDEV H/s | $V2_STDEV H/s |"
+        echo "| Hashrate (min) | $V1_MIN H/s | $V2_MIN H/s |"
+        echo "| Hashrate (max) | $V1_MAX H/s | $V2_MAX H/s |"
+        echo "| Total energy | ${V1_TOTAL_ENERGY_J} J | ${V2_TOTAL_ENERGY_J} J |"
+        echo "| Total time | ${V1_TOTAL_TIME} s | ${V2_TOTAL_TIME} s |"
+        echo "| Average power | ${V1_AVG_POWER} W | ${V2_AVG_POWER} W |"
         echo ""
-        echo "**Difference:** $DIFF H/s ($DIFF_PCT%) - $COMPARISON"
+        echo "</details>"
         echo ""
         echo "======================================"
     }
@@ -613,13 +857,19 @@ display_results() {
     OUTPUT_RESULTS | tee "$RESULTS_FILE"
     GITHUB_SUMMARY | tee -a "$RESULTS_FILE"
 
-    # Also save raw hashrate data to results file
+    # Also save raw data to results file
     echo "" >> "$RESULTS_FILE"
     echo "Raw V2 Hashrates:" >> "$RESULTS_FILE"
     cat "$V2_HASHRATES_FILE" >> "$RESULTS_FILE" 2>/dev/null
     echo "" >> "$RESULTS_FILE"
     echo "Raw V1 Hashrates:" >> "$RESULTS_FILE"
     cat "$V1_HASHRATES_FILE" >> "$RESULTS_FILE" 2>/dev/null
+    echo "" >> "$RESULTS_FILE"
+    echo "Raw V2 Energy (uJ):" >> "$RESULTS_FILE"
+    cat "$V2_ENERGY_FILE" >> "$RESULTS_FILE" 2>/dev/null
+    echo "" >> "$RESULTS_FILE"
+    echo "Raw V1 Energy (uJ):" >> "$RESULTS_FILE"
+    cat "$V1_ENERGY_FILE" >> "$RESULTS_FILE" 2>/dev/null
 
     echo ""
     echo "Results saved to: $RESULTS_FILE"
@@ -637,6 +887,7 @@ main() {
 
     check_root
     setup_hugepages
+    detect_rapl
 
     # Check if dependencies are already installed
     if check_dependencies_installed; then
