@@ -7,14 +7,17 @@
 # - Auto-detects optimal thread count and affinity
 # - Measures power consumption via RAPL
 #
-# Usage: sudo ./randomx_benchmark_full.sh [--runs N]
+# Usage: sudo ./randomx_benchmark_full.sh [OPTIONS]
 #   --runs N    Number of benchmark runs per version (default: 100)
+#   --no-msr    Disable MSR optimizations
 
 set -e
 set -o pipefail
 
 # Default number of runs
 NUM_RUNS=100
+# MSR optimizations enabled by default
+MSR_ENABLED=1
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -23,14 +26,19 @@ while [[ $# -gt 0 ]]; do
             NUM_RUNS="$2"
             shift 2
             ;;
+        --no-msr)
+            MSR_ENABLED=0
+            shift
+            ;;
         --help|-h)
-            echo "Usage: sudo $0 [--runs N]"
+            echo "Usage: sudo $0 [OPTIONS]"
             echo "  --runs N, -r N    Number of benchmark runs per version (default: 100)"
+            echo "  --no-msr          Disable MSR optimizations"
             exit 0
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: sudo $0 [--runs N]"
+            echo "Usage: sudo $0 [--runs N] [--no-msr]"
             exit 1
             ;;
     esac
@@ -293,8 +301,15 @@ clone_and_build() {
 apply_msr_boost() {
     echo ""
     echo "======================================"
-    echo "Applying MSR optimizations..."
+    echo "MSR Optimizations"
     echo "======================================"
+
+    if [ "$MSR_ENABLED" -eq 0 ]; then
+        echo "  MSR optimizations disabled (--no-msr flag)"
+        return
+    fi
+
+    echo "Applying MSR optimizations..."
 
     MSR_FILE=/sys/module/msr/parameters/allow_writes
 
