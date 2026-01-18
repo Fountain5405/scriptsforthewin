@@ -390,12 +390,12 @@ detect_optimal_settings() {
         echo "$1" | sed -n 's/.*[[:space:]]\([0-9]\+\)[[:space:]]*[MGK]i\?B.*/\1/p' | head -1
     }
 
-    L3_LINE=$(lscpu | grep -E "^[[:space:]]*L3")
+    L3_LINE=$(lscpu | grep -E "^[[:space:]]*L3" || true)
     L3_CACHE_MB=$(parse_cache_size "$L3_LINE")
 
     if [ -z "$L3_CACHE_MB" ] || [ "$L3_CACHE_MB" -eq 0 ] 2>/dev/null; then
         # No L3 cache - try L2 (older CPUs like Core 2 Quad)
-        L2_LINE=$(lscpu | grep -E "^[[:space:]]*L2")
+        L2_LINE=$(lscpu | grep -E "^[[:space:]]*L2" || true)
         L2_CACHE_MB=$(parse_cache_size "$L2_LINE")
         if [ -n "$L2_CACHE_MB" ] && [ "$L2_CACHE_MB" -gt 0 ] 2>/dev/null; then
             CACHE_MB=$L2_CACHE_MB
