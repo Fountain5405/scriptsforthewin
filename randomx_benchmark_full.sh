@@ -375,12 +375,13 @@ detect_optimal_settings() {
     SOCKETS=$(lscpu | grep "^Socket(s):" | awk '{print $NF}')
     TOTAL_PHYSICAL=$((PHYSICAL_CORES * SOCKETS))
 
-    # Extract L3 cache size (e.g., "64 MiB" -> 64)
+    # Extract cache size from lscpu
+    # Handles both formats: "L3 cache: 64 MiB" and "L3: 64 MiB (instances)"
     # Fall back to L2 cache for older CPUs without L3
-    L3_CACHE_MB=$(lscpu | grep "L3 cache" | grep -oP ':\s*\K[\d]+' | head -1)
+    L3_CACHE_MB=$(lscpu | grep -E "^[[:space:]]*L3" | grep -oP '[\d]+\s*[MG]i?B' | grep -oP '[\d]+' | head -1)
     if [ -z "$L3_CACHE_MB" ] || [ "$L3_CACHE_MB" -eq 0 ] 2>/dev/null; then
-        # No L3 cache - try L2 (older CPUs like Core 2 Duo)
-        L2_CACHE_MB=$(lscpu | grep "L2 cache" | grep -oP ':\s*\K[\d]+' | head -1)
+        # No L3 cache - try L2 (older CPUs like Core 2 Quad)
+        L2_CACHE_MB=$(lscpu | grep -E "^[[:space:]]*L2" | grep -oP '[\d]+\s*[MG]i?B' | grep -oP '[\d]+' | head -1)
         if [ -n "$L2_CACHE_MB" ] && [ "$L2_CACHE_MB" -gt 0 ] 2>/dev/null; then
             CACHE_MB=$L2_CACHE_MB
             CACHE_TYPE="L2"
