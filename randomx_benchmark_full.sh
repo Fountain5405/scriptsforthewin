@@ -815,10 +815,10 @@ display_results() {
     fi
 
     # Get energy statistics (sum of all energy in microjoules)
-    V2_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {print sum+0}' "$V2_ENERGY_FILE" 2>/dev/null || echo "0")
-    V1_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {print sum+0}' "$V1_ENERGY_FILE" 2>/dev/null || echo "0")
-    V2_TOTAL_TIME=$(awk '{sum+=$1} END {print sum+0}' "$V2_TIME_FILE" 2>/dev/null || echo "0")
-    V1_TOTAL_TIME=$(awk '{sum+=$1} END {print sum+0}' "$V1_TIME_FILE" 2>/dev/null || echo "0")
+    V2_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {printf "%.0f", sum+0}' "$V2_ENERGY_FILE" 2>/dev/null || echo "0")
+    V1_TOTAL_ENERGY_UJ=$(awk '{sum+=$1} END {printf "%.0f", sum+0}' "$V1_ENERGY_FILE" 2>/dev/null || echo "0")
+    V2_TOTAL_TIME=$(awk '{sum+=$1} END {printf "%.2f", sum+0}' "$V2_TIME_FILE" 2>/dev/null || echo "0")
+    V1_TOTAL_TIME=$(awk '{sum+=$1} END {printf "%.2f", sum+0}' "$V1_TIME_FILE" 2>/dev/null || echo "0")
 
     # Ensure non-empty values
     [ -z "$V2_TOTAL_ENERGY_UJ" ] && V2_TOTAL_ENERGY_UJ=0
@@ -876,17 +876,17 @@ display_results() {
 
     # Calculate relative speed (V1 = 100%)
     if is_valid_number "$V1_HASHRATE" && is_valid_number "$V2_HASHRATE"; then
-        V1_REL_SPEED="100.0"
-        V2_REL_SPEED=$(echo "scale=1; ($V2_HASHRATE / $V1_HASHRATE) * 100" | bc)
+        V1_REL_SPEED="100.00"
+        V2_REL_SPEED=$(echo "scale=2; ($V2_HASHRATE / $V1_HASHRATE) * 100" | bc)
     else
-        V1_REL_SPEED="100.0"
+        V1_REL_SPEED="100.00"
         V2_REL_SPEED="N/A"
     fi
 
     # Calculate relative work/Joule (V1 = 100%)
     if is_valid_number "$V1_VMAES_PER_JOULE" && is_valid_number "$V2_VMAES_PER_JOULE"; then
-        V1_REL_WORK_JOULE="100.0"
-        V2_REL_WORK_JOULE=$(echo "scale=1; ($V2_VMAES_PER_JOULE / $V1_VMAES_PER_JOULE) * 100" | bc)
+        V1_REL_WORK_JOULE="100.00"
+        V2_REL_WORK_JOULE=$(echo "scale=2; ($V2_VMAES_PER_JOULE / $V1_VMAES_PER_JOULE) * 100" | bc)
     else
         V1_REL_WORK_JOULE="N/A"
         V2_REL_WORK_JOULE="N/A"
