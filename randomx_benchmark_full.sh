@@ -234,17 +234,82 @@ check_dependencies_installed() {
     return $missing
 }
 
-check_randomx_built() {
+check_and_update_randomx() {
+    echo ""
+    echo "======================================"
+    echo "Checking RandomX repository..."
+    echo "======================================"
+
     local binary="$WORK_DIR/RandomX/build/randomx-benchmark"
-    if [ -x "$binary" ]; then
-        echo ""
-        echo "======================================"
-        echo "RandomX benchmark already built at:"
-        echo "  $binary"
-        echo "======================================"
+    local needs_build=0
+
+    # If directory doesn't exist, needs full clone + build
+    if [ ! -d "$WORK_DIR/RandomX" ]; then
+        echo "  RandomX not found, will clone and build"
+        return 1
+    fi
+
+    cd "$WORK_DIR/RandomX"
+
+    # Fetch latest from remote
+    echo "  Fetching updates from origin..."
+    git fetch origin 2>/dev/null
+
+    # Get current and remote commit hashes
+    LOCAL_COMMIT=$(git rev-parse HEAD 2>/dev/null)
+    REMOTE_COMMIT=$(git rev-parse origin/$BRANCH 2>/dev/null)
+
+    echo "  Local commit:  ${LOCAL_COMMIT:0:7}"
+    echo "  Remote commit: ${REMOTE_COMMIT:0:7}"
+
+    if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+        echo "  Updates available, will pull and rebuild"
+        needs_build=1
+    elif [ ! -x "$binary" ]; then
+        echo "  Binary not found, will build"
+        needs_build=1
+    else
+        echo "  Already up to date"
+        echo "  Binary: $binary"
         return 0
     fi
+
+    # Pull updates (handles diverged branches from force pushes)
+    if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+        echo "  Resetting to origin/$BRANCH..."
+        git reset --hard origin/$BRANCH
+    fi
+
     return 1
+}
+
+build_randomx() {
+    echo ""
+    echo "======================================"
+    echo "Building RandomX..."
+    echo "======================================"
+
+    mkdir -p "$WORK_DIR"
+    cd "$WORK_DIR"
+
+    # Clone if needed
+    if [ ! -d "RandomX" ]; then
+        echo "Cloning RandomX repository..."
+        git clone "$REPO_URL"
+        cd RandomX
+        git checkout $BRANCH
+    else
+        cd RandomX
+    fi
+
+    # Clean and build
+    rm -rf build
+    mkdir -p build
+    cd build
+    cmake -DARCH=native ..
+    make -j$(nproc)
+
+    echo "Build complete: $WORK_DIR/RandomX/build/randomx-benchmark"
 }
 
 detect_package_manager() {
@@ -293,40 +358,6 @@ install_dependencies() {
     esac
 
     echo "Dependencies installed."
-}
-
-clone_and_build() {
-    echo ""
-    echo "======================================"
-    echo "Cloning and building RandomX..."
-    echo "======================================"
-
-    # Create work directory
-    mkdir -p "$WORK_DIR"
-    cd "$WORK_DIR"
-
-    # Clone if not exists, otherwise update
-    if [ -d "RandomX" ]; then
-        echo "RandomX directory exists, updating..."
-        cd RandomX
-        git fetch origin
-        git checkout $BRANCH
-        git pull origin $BRANCH
-    else
-        echo "Cloning RandomX repository..."
-        git clone "$REPO_URL"
-        cd RandomX
-        git checkout $BRANCH
-    fi
-
-    # Build
-    echo "Building RandomX..."
-    mkdir -p build
-    cd build
-    cmake -DARCH=native ..
-    make -j$(nproc)
-
-    echo "Build complete: $WORK_DIR/RandomX/build/randomx-benchmark"
 }
 
 apply_msr_boost() {
@@ -1011,13 +1042,9 @@ main() {
         install_dependencies
     fi
 
-    # Check if RandomX is already built
-    if check_randomx_built; then
-        echo "Skipping clone and build."
-    else
-        echo ""
-        echo "RandomX benchmark not found. Building..."
-        clone_and_build
+    # Check for RandomX updates and build if needed
+    if ! check_and_update_randomx; then
+        build_randomx
     fi
 
     apply_msr_boost
