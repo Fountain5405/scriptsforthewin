@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RandomX v2 — What It Does &amp; Why</title>
+<style>
+  :root {
+    --accent: #f7931a;
+    --dark: #1a1a2e;
+    --mid: #16213e;
+    --light: #e8e8e8;
+    --green: #4ecca3;
+    --red: #e84545;
+    --blue: #3498db;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--dark);
+    color: var(--light);
+    line-height: 1.7;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  /* Hero */
+  .hero {
+    text-align: center;
+    padding: 4rem 1rem 3rem;
+    background: linear-gradient(135deg, var(--dark), var(--mid));
+    border-bottom: 3px solid var(--accent);
+  }
+  .hero h1 { font-size: 2.8rem; color: var(--accent); margin-bottom: 0.5rem; }
+  .hero p { font-size: 1.2rem; color: #aaa; max-width: 600px; margin: 0 auto; }
+
+  /* Sections */
+  section { padding: 3rem 0; }
+  h2 {
+    font-size: 1.8rem;
+    color: var(--accent);
+    margin-bottom: 1.2rem;
+    border-left: 4px solid var(--accent);
+    padding-left: 0.8rem;
+  }
+  p, li { font-size: 1.05rem; margin-bottom: 0.8rem; }
+  ul { padding-left: 1.5rem; }
+
+  /* Cards */
+  .card-row {
+    display: flex;
+    gap: 1.5rem;
+    margin: 1.5rem 0;
+    flex-wrap: wrap;
+  }
+  .card {
+    flex: 1;
+    min-width: 260px;
+    background: var(--mid);
+    border-radius: 12px;
+    padding: 1.5rem;
+    border: 1px solid #2a2a4a;
+  }
+  .card h3 { color: var(--green); margin-bottom: 0.6rem; font-size: 1.15rem; }
+
+  /* Bar chart */
+  .bar-chart { margin: 1.5rem 0; }
+  .bar-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.7rem;
+  }
+  .bar-label {
+    width: 130px;
+    font-weight: 600;
+    text-align: right;
+    padding-right: 1rem;
+    font-size: 0.95rem;
+  }
+  .bar-track {
+    flex: 1;
+    background: #2a2a4a;
+    border-radius: 8px;
+    height: 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    padding-left: 12px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    transition: width 0.6s ease;
+  }
+  .bar-v1 { background: var(--blue); width: 67%; }
+  .bar-v2 { background: var(--green); width: 100%; }
+
+  /* Diagram */
+  .diagram {
+    background: var(--mid);
+    border-radius: 12px;
+    padding: 2rem;
+    margin: 1.5rem 0;
+    border: 1px solid #2a2a4a;
+    text-align: center;
+  }
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+  }
+  .flow-box {
+    background: var(--dark);
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    padding: 0.8rem 1.2rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  .flow-arrow { font-size: 1.5rem; color: var(--accent); }
+
+  /* Comparison table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    background: var(--mid);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  th, td { padding: 0.9rem 1.2rem; text-align: left; }
+  th { background: #0f3460; color: var(--accent); font-size: 0.95rem; }
+  td { border-top: 1px solid #2a2a4a; }
+  tr:hover td { background: rgba(247, 147, 26, 0.05); }
+
+  /* Icon grid */
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.2rem;
+    margin: 1.5rem 0;
+  }
+  .icon-item {
+    background: var(--mid);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    border: 1px solid #2a2a4a;
+  }
+  .icon-item .emoji { font-size: 2.5rem; margin-bottom: 0.5rem; }
+  .icon-item h4 { color: var(--green); margin-bottom: 0.3rem; }
+
+  /* Gauge */
+  .gauge-row {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin: 1.5rem 0;
+  }
+  .gauge {
+    text-align: center;
+    width: 180px;
+  }
+  .gauge svg { width: 160px; height: 100px; }
+  .gauge-label { font-size: 0.95rem; color: #aaa; margin-top: 0.3rem; }
+  .gauge-value { font-size: 1.4rem; font-weight: 700; }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 2rem 0;
+    color: #555;
+    font-size: 0.85rem;
+    border-top: 1px solid #2a2a4a;
+  }
+
+  /* Callout */
+  .callout {
+    background: rgba(247, 147, 26, 0.1);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 1.2rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .callout strong { color: var(--accent); }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .hero h1 { font-size: 2rem; }
+    .card-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <h1>RandomX v2</h1>
+  <p>A stronger, fairer way to secure cryptocurrency — and a benchmark tool to measure it</p>
+</div>
+
+<div class="container">
+
+<!-- Section 1: What is RandomX? -->
+<section>
+  <h2>What is RandomX?</h2>
+  <p>
+    RandomX is a <strong>proof-of-work algorithm</strong> — a mathematical puzzle that computers solve
+    to validate and secure cryptocurrency transactions. Think of it like a combination lock that
+    takes real effort to open, ensuring nobody can cheat the system.
+  </p>
+  <p>
+    What makes RandomX special is that it's designed to run best on <strong>everyday CPUs</strong> — the
+    same processors in regular desktops and laptops — rather than expensive specialized hardware.
+    This keeps mining accessible and decentralized.
+  </p>
+
+  <div class="diagram">
+    <strong style="color: var(--accent);">How RandomX works (simplified)</strong>
+    <div class="flow">
+      <div class="flow-box">Transaction Data</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-box">RandomX Puzzle</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-box">CPU Solves It</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-box">Block Confirmed &check;</div>
+    </div>
+    <p style="color:#888; margin-top:0.8rem; font-size:0.9rem;">
+      Each "hash" is one attempt at solving the puzzle. More hashes = more attempts per second.
+    </p>
+  </div>
+</section>
+
+<!-- Section 2: V1 vs V2 -->
+<section>
+  <h2>What Changed in Version 2?</h2>
+  <p>
+    RandomX v2 makes the puzzle <strong>50% harder per hash</strong> by increasing the number of
+    computational steps from ~4.2 million to ~6.3 million operations. But "harder" here is a
+    good thing — it means each solution proves more real work was done.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Property</th>
+        <th>v1 (Original)</th>
+        <th>v2 (New)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Operations per hash</td>
+        <td>~4.2 million</td>
+        <td>~6.3 million</td>
+      </tr>
+      <tr>
+        <td>Program size</td>
+        <td>256 instructions</td>
+        <td>384 instructions</td>
+      </tr>
+      <tr>
+        <td>Work increase</td>
+        <td>Baseline</td>
+        <td>+50% more work per hash</td>
+      </tr>
+      <tr>
+        <td>Best hardware</td>
+        <td>CPUs</td>
+        <td>CPUs (even more so)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Key insight:</strong> Even though v2 produces fewer hashes per second,
+    each hash represents 50% more computational work. The total useful work per second
+    can actually be <em>higher</em> with v2 on modern CPUs.
+  </div>
+
+  <h3 style="color:var(--green); margin: 1.5rem 0 0.8rem;">Work per Hash — Visual Comparison</h3>
+  <div class="bar-chart">
+    <div class="bar-row">
+      <span class="bar-label">v1</span>
+      <div class="bar-track">
+        <div class="bar-fill bar-v1">4.2M ops</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <span class="bar-label">v2</span>
+      <div class="bar-track">
+        <div class="bar-fill bar-v2">6.3M ops</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Section 3: Why? -->
+<section>
+  <h2>Why Upgrade to v2?</h2>
+  <div class="icon-grid">
+    <div class="icon-item">
+      <div class="emoji">&#x1F6E1;&#xFE0F;</div>
+      <h4>Stronger Security</h4>
+      <p>More operations per hash means the puzzle is harder to shortcut with specialized chips (ASICs/FPGAs).</p>
+    </div>
+    <div class="icon-item">
+      <div class="emoji">&#x2696;&#xFE0F;</div>
+      <h4>Fairer Mining</h4>
+      <p>Keeps everyday CPUs competitive, so regular people can participate — not just large mining farms.</p>
+    </div>
+    <div class="icon-item">
+      <div class="emoji">&#x26A1;</div>
+      <h4>Better Efficiency</h4>
+      <p>Modern CPUs can do more useful work per watt of energy with the v2 algorithm.</p>
+    </div>
+    <div class="icon-item">
+      <div class="emoji">&#x1F50D;</div>
+      <h4>Proven by Testing</h4>
+      <p>The benchmark suite rigorously tests performance, stability, and power consumption before adoption.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Section 4: The Benchmark Tool -->
+<section>
+  <h2>What the Benchmark Tool Does</h2>
+  <p>
+    This project includes an automated benchmarking script that runs both v1 and v2 side by side
+    on your hardware and compares the results. Here's what it measures:
+  </p>
+
+  <div class="diagram">
+    <strong style="color: var(--accent);">Benchmark Pipeline</strong>
+    <div class="flow">
+      <div class="flow-box">Detect CPU</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-box">Optimize Settings</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-box">Run v1 &amp; v2</div>
+      <span class="flow-arrow">&rarr;</span>
+      <div class="flow-box">Measure &amp; Compare</div>
+    </div>
+  </div>
+
+  <div class="card-row">
+    <div class="card">
+      <h3>Speed</h3>
+      <p>How many hashes per second each version achieves — the raw throughput of the algorithm.</p>
+    </div>
+    <div class="card">
+      <h3>Power Draw</h3>
+      <p>Watts consumed during the test, measured directly from CPU power sensors (RAPL).</p>
+    </div>
+    <div class="card">
+      <h3>Efficiency</h3>
+      <p>Hashes per joule of energy — the most important metric for real-world viability.</p>
+    </div>
+  </div>
+  <div class="card-row">
+    <div class="card">
+      <h3>Stability</h3>
+      <p>Tracks crashes and errors over hundreds of runs to ensure the algorithm is rock-solid.</p>
+    </div>
+    <div class="card">
+      <h3>Total Work</h3>
+      <p>Combines hashrate with operations-per-hash to show real computational output per second.</p>
+    </div>
+    <div class="card">
+      <h3>Smart Tuning</h3>
+      <p>Automatically detects your CPU type and applies optimal settings for AMD Ryzen, EPYC, and Intel processors.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Section 5: Gauges -->
+<section>
+  <h2>What v2 Aims to Achieve</h2>
+  <p>The ideal outcome of adopting RandomX v2:</p>
+  <div class="gauge-row">
+    <div class="gauge">
+      <svg viewBox="0 0 160 100">
+        <path d="M20 90 A60 60 0 0 1 140 90" fill="none" stroke="#2a2a4a" stroke-width="14" stroke-linecap="round"/>
+        <path d="M20 90 A60 60 0 0 1 140 90" fill="none" stroke="var(--green)" stroke-width="14" stroke-linecap="round" stroke-dasharray="188" stroke-dashoffset="0"/>
+        <text x="80" y="80" text-anchor="middle" fill="var(--green)" font-size="22" font-weight="700">+50%</text>
+      </svg>
+      <div class="gauge-label">Work per Hash</div>
+    </div>
+    <div class="gauge">
+      <svg viewBox="0 0 160 100">
+        <path d="M20 90 A60 60 0 0 1 140 90" fill="none" stroke="#2a2a4a" stroke-width="14" stroke-linecap="round"/>
+        <path d="M20 90 A60 60 0 0 1 140 90" fill="none" stroke="var(--accent)" stroke-width="14" stroke-linecap="round" stroke-dasharray="188" stroke-dashoffset="30"/>
+        <text x="80" y="80" text-anchor="middle" fill="var(--accent)" font-size="22" font-weight="700">High</text>
+      </svg>
+      <div class="gauge-label">ASIC Resistance</div>
+    </div>
+    <div class="gauge">
+      <svg viewBox="0 0 160 100">
+        <path d="M20 90 A60 60 0 0 1 140 90" fill="none" stroke="#2a2a4a" stroke-width="14" stroke-linecap="round"/>
+        <path d="M20 90 A60 60 0 0 1 140 90" fill="none" stroke="var(--blue)" stroke-width="14" stroke-linecap="round" stroke-dasharray="188" stroke-dashoffset="15"/>
+        <text x="80" y="80" text-anchor="middle" fill="var(--blue)" font-size="22" font-weight="700">Better</text>
+      </svg>
+      <div class="gauge-label">Energy Efficiency</div>
+    </div>
+  </div>
+</section>
+
+<!-- Section 6: Analogy -->
+<section>
+  <h2>An Everyday Analogy</h2>
+  <div class="diagram" style="text-align:left;">
+    <p>
+      Imagine a <strong>spelling bee</strong> where contestants prove their skill by spelling words correctly.
+    </p>
+    <ul style="margin: 1rem 0 1rem 1.5rem;">
+      <li><strong>v1</strong> is like spelling 4-letter words. Fast, but someone could build a machine to buzz in first.</li>
+      <li><strong>v2</strong> is like spelling 6-letter words. Slightly slower per word, but it tests <em>real ability</em> more deeply — making it much harder to cheat with a gadget.</li>
+    </ul>
+    <p>
+      The benchmark tool is the <strong>stopwatch and scorecard</strong> — it times each contestant,
+      tracks their accuracy, and figures out who is the most efficient speller.
+    </p>
+  </div>
+</section>
+
+<!-- Section 7: In a Nutshell -->
+<section>
+  <h2>In a Nutshell</h2>
+  <div class="callout">
+    <strong>RandomX v2</strong> makes cryptocurrency mining puzzles harder to cheat on, fairer for
+    regular computer owners, and more energy-efficient on modern hardware. The benchmark tool
+    in this project proves these benefits with real measurements — speed, power draw, and
+    stability — across hundreds of test runs on your own CPU.
+  </div>
+</section>
+
+</div>
+
+<footer>
+  <p>RandomX v2 Benchmark Suite &mdash; <a href="https://github.com/SChernykh/RandomX" style="color:var(--accent);">github.com/SChernykh/RandomX</a></p>
+</footer>
+
+</body>
+</html>
