@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RandomX v2 — What It Does &amp; Why</title>
+<title>RandomX v2 - What It Does &amp; Why</title>
 <style>
   :root {
-    --accent: #f7931a;
-    --dark: #1a1a2e;
-    --mid: #16213e;
-    --light: #e8e8e8;
-    --green: #4ecca3;
-    --red: #e84545;
-    --blue: #3498db;
+   --accent: #f7931a;
+   --dark: #1a1a2e;
+   --mid: #16213e;
+   --light: #e8e8e8;
+   --green: #4ecca3;
+   --red: #e84545;
+   --blue: #3498db;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -202,7 +202,7 @@
 <!-- Hero -->
 <div class="hero">
   <h1>RandomX v2</h1>
-  <p>A stronger, fairer way to secure cryptocurrency — and a benchmark tool to measure it</p>
+  <p>A stronger, fairer way to secure cryptocurrency - and a benchmark tool to measure it</p>
 </div>
 
 <div class="container">
@@ -211,13 +211,13 @@
 <section>
   <h2>What is RandomX?</h2>
   <p>
-    RandomX is a <strong>proof-of-work algorithm</strong> — a mathematical puzzle that computers solve
+    RandomX is a <strong>proof-of-work algorithm</strong> - a mathematical puzzle that computers solve
     to validate and secure cryptocurrency transactions. Think of it like a combination lock that
     takes real effort to open, ensuring nobody can cheat the system.
   </p>
   <p>
-    What makes RandomX special is that it's designed to run best on <strong>everyday CPUs</strong> — the
-    same processors in regular desktops and laptops — rather than expensive specialized hardware.
+    What makes RandomX special is that it's designed to run best on <strong>everyday CPUs</strong> - the
+    same processors in regular desktops and laptops - rather than expensive specialized hardware.
     This keeps mining accessible and decentralized.
   </p>
 
@@ -244,7 +244,7 @@
   <p>
     RandomX v2 makes the puzzle <strong>50% harder per hash</strong> by increasing the number of
     computational steps from ~4.2 million to ~6.3 million operations. But "harder" here is a
-    good thing — it means each solution proves more real work was done.
+    good thing - it means each solution proves more real work was done.
   </p>
 
   <table>
@@ -285,7 +285,7 @@
     can actually be <em>higher</em> with v2 on modern CPUs.
   </div>
 
-  <h3 style="color:var(--green); margin: 1.5rem 0 0.8rem;">Work per Hash — Visual Comparison</h3>
+  <h3 style="color:var(--green); margin: 1.5rem 0 0.8rem;">Work per Hash - Visual Comparison</h3>
   <div class="bar-chart">
     <div class="bar-row">
       <span class="bar-label">v1</span>
@@ -314,7 +314,7 @@
     <div class="icon-item">
       <div class="emoji">&#x2696;&#xFE0F;</div>
       <h4>Fairer Mining</h4>
-      <p>Keeps everyday CPUs competitive, so regular people can participate — not just large mining farms.</p>
+      <p>Keeps everyday CPUs competitive, so regular people can participate - not just large mining farms.</p>
     </div>
     <div class="icon-item">
       <div class="emoji">&#x26A1;</div>
@@ -333,7 +333,7 @@
 <section>
   <h2>What the Benchmark Tool Does</h2>
   <p>
-    This project includes an automated benchmarking script that runs both v1 and v2 side by side
+    This project includes an automated <a href="https://github.com/Fountain5405/scriptsforthewin/blob/main/randomx_benchmark_full.sh" style="color:var(--accent);">benchmarking script</a> that runs both v1 and v2 side by side
     on your hardware and compares the results. Here's what it measures:
   </p>
 
@@ -353,7 +353,7 @@
   <div class="card-row">
     <div class="card">
       <h3>Speed</h3>
-      <p>How many hashes per second each version achieves — the raw throughput of the algorithm.</p>
+      <p>How many hashes per second each version achieves - the raw throughput of the algorithm.</p>
     </div>
     <div class="card">
       <h3>Power Draw</h3>
@@ -361,7 +361,7 @@
     </div>
     <div class="card">
       <h3>Efficiency</h3>
-      <p>Hashes per joule of energy — the most important metric for real-world viability.</p>
+      <p>Hashes per joule of energy - the most important metric for real-world viability.</p>
     </div>
   </div>
   <div class="card-row">
@@ -421,10 +421,10 @@
     </p>
     <ul style="margin: 1rem 0 1rem 1.5rem;">
       <li><strong>v1</strong> is like spelling 4-letter words. Fast, but someone could build a machine to buzz in first.</li>
-      <li><strong>v2</strong> is like spelling 6-letter words. Slightly slower per word, but it tests <em>real ability</em> more deeply — making it much harder to cheat with a gadget.</li>
+      <li><strong>v2</strong> is like spelling 6-letter words. Slightly slower per word, but it tests <em>real ability</em> more deeply - making it much harder to cheat with a gadget.</li>
     </ul>
     <p>
-      The benchmark tool is the <strong>stopwatch and scorecard</strong> — it times each contestant,
+      The benchmark tool is the <strong>stopwatch and scorecard</strong> - it times each contestant,
       tracks their accuracy, and figures out who is the most efficient speller.
     </p>
   </div>
@@ -435,14 +435,14 @@
   <h2>In a Nutshell</h2>
   <div class="callout">
     <strong>RandomX v2</strong> makes cryptocurrency mining puzzles harder to cheat on, fairer for
-    regular computer owners, and more energy-efficient on modern hardware. The benchmark tool
-    in this project proves these benefits with real measurements — speed, power draw, and
-    stability — across hundreds of test runs on your own CPU.
+    regular computer owners, and more energy-efficient on modern hardware. The <a href="https://github.com/Fountain5405/scriptsforthewin/blob/main/randomx_benchmark_full.sh" style="color:var(--accent);">benchmark tool</a>
+    in this project proves these benefits with real measurements: speed, power draw, and
+    stability, across hundreds of test runs on your own CPU.
   </div>
 </section>
 
 <!-- ============================================================ -->
-<!-- DEEP DIVE — Technical Details                                 -->
+<!-- DEEP DIVE - Technical Details                                -->
 <!-- ============================================================ -->
 
 <section>
@@ -454,10 +454,16 @@
   <p>
     RandomX's main loop works by repeatedly executing a small random program and then reading
     a chunk of data (64 bytes) from a large <em>Dataset</em> stored in RAM. Each program iteration
-    is deliberately tuned to take about <strong>50&ndash;100 nanoseconds</strong> — roughly the same
+    is deliberately tuned to take about <strong>50&ndash;55 nanoseconds</strong> - roughly the same
     time it takes for DRAM to deliver data. The idea is that the CPU computes while the next
     piece of data is being fetched in the background (prefetched), so neither the CPU nor the
     memory bus sits idle.
+  </p>
+  <p>
+    The problem? <strong>While CPU cores got faster over the years, RAM latency stayed basically
+    the same.</strong> CPUs have advanced roughly 1.5x since RandomX was designed in 2019, but
+    DRAM still takes ~50&ndash;55 ns to respond. Modern processors like AMD Zen 5 finish the
+    v1 program well before the data arrives - and then sit idle, burning power while waiting.
   </p>
 
   <div class="diagram">
@@ -467,7 +473,7 @@
         <span style="width:90px; text-align:right; font-size:0.85rem; color:#aaa;">CPU</span>
         <div style="flex:1; display:flex; height:32px; border-radius:6px; overflow:hidden;">
           <div style="width:55%; background:var(--blue); display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700;">Compute (256 instructions)</div>
-          <div style="width:25%; background:#e84545; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; color:#fff;">Idle &mdash; waiting</div>
+          <div style="width:25%; background:#e84545; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; color:#fff;">Idle - waiting</div>
           <div style="width:20%; background:var(--blue); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:600;">AES (XOR mix)</div>
         </div>
       </div>
@@ -489,7 +495,7 @@
   <p>
     This idle window is the core inefficiency of v1. The CPU has finished all its work
     but the next piece of dataset hasn't arrived yet. Those wasted cycles still consume
-    power — your CPU is burning electricity while doing zero useful work.
+    power - your CPU is burning electricity while doing zero useful work.
   </p>
 </section>
 
@@ -503,17 +509,18 @@
     <div class="card">
       <h3>1. Bigger Programs (256 &rarr; 384 instructions)</h3>
       <p>
-        Each iteration now runs <strong>384 instructions</strong> instead of 256 — a 50% increase.
-        This keeps the CPU's execution units busy for longer, filling more of the memory-wait gap
-        with real computation.
+        CPUs have gotten roughly 1.5x faster since RandomX was designed in 2019, but RAM latency
+        stayed at ~50-55 ns. So v2 increases the program to <strong>384 instructions</strong>
+        (1.5x), matching the CPU-to-memory speed ratio again and filling the gap with real computation.
       </p>
     </div>
     <div class="card">
       <h3>2. AES Register Mixing (XOR &rarr; 16 AES rounds)</h3>
       <p>
-        In v1, the F and E registers were mixed with a simple XOR — nearly instant.
+        In v1, the F and E registers were mixed with a simple XOR - nearly instant.
         In v2, they're mixed with <strong>16 AES encryption rounds</strong>. This uses the
-        CPU's dedicated AES hardware during what was previously dead time.
+        CPU's dedicated AES hardware during what was previously dead time, and also
+        improves data entropy before scratchpad writes.
       </p>
     </div>
   </div>
@@ -544,7 +551,7 @@
   </div>
 
   <div class="callout">
-    <strong>The AES trick is especially clever:</strong> it doesn't just fill idle time — it also
+    <strong>The AES trick is especially clever:</strong> it doesn't just fill idle time - it also
     strengthens ASIC resistance. In v1, a custom chip could skip AES in the main loop because it
     was only used for scratchpad initialization. In v2, AES is woven directly into the VM's core
     register mixing, so any hardware implementation <em>must</em> include a full AES engine inside
@@ -564,7 +571,7 @@
       <h3>v1: Prefetch 1 Iteration Ahead</h3>
       <p>
         While running iteration N, the CPU requests the data for iteration N+1.
-        On faster modern CPUs, this isn't enough lead time — the data may not arrive
+        On faster modern CPUs, this isn't enough lead time - the data may not arrive
         before it's needed, causing a stall.
       </p>
     </div>
@@ -573,7 +580,7 @@
       <p>
         While running iteration N, the CPU requests data for iteration N+2.
         This gives DRAM twice as long to deliver, virtually guaranteeing the data
-        is ready when needed — even on the fastest modern processors.
+        is ready when needed - even on the fastest modern processors.
       </p>
     </div>
   </div>
@@ -596,7 +603,7 @@
     </div>
     <p style="color:#aaa; font-size:0.85rem; margin-top:0.8rem;">
       By requesting data two iterations in advance, the memory system has twice as long
-      to deliver — eliminating stalls on fast modern CPUs.
+      to deliver - eliminating stalls on fast modern CPUs.
     </p>
   </div>
 </section>
@@ -606,7 +613,7 @@
   <p>
     A third, more subtle change targets floating-point performance. The <code>CFROUND</code>
     instruction controls the CPU's rounding mode for floating-point math. In v1, it executed
-    frequently — but changing the rounding mode is <strong>expensive</strong> on modern CPUs
+    frequently - but changing the rounding mode is <strong>expensive</strong> on modern CPUs
     because it forces the processor to flush its instruction pipeline.
   </p>
   <p>
@@ -620,7 +627,7 @@
     <strong style="color: var(--accent);">Pipeline Flush Frequency</strong>
     <div style="margin:1.5rem auto; max-width:600px;">
       <!-- v1: frequent flushes -->
-      <p style="color:var(--blue); font-weight:700; margin-bottom:0.4rem; text-align:left; font-size:0.9rem;">v1 — CFROUND fires often (every ~16 instructions):</p>
+      <p style="color:var(--blue); font-weight:700; margin-bottom:0.4rem; text-align:left; font-size:0.9rem;">v1 - CFROUND fires often (every ~16 instructions):</p>
       <div style="display:flex; gap:1px; margin-bottom:0.4rem; height:28px;">
         <div style="flex:3; background:var(--blue); border-radius:3px 0 0 3px;"></div>
         <div style="flex:0.4; background:var(--red); display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700;">FLUSH</div>
@@ -635,7 +642,7 @@
       <p style="color:#e84545; font-size:0.8rem; text-align:left; margin-bottom:1.2rem;">Each red bar = pipeline flush. CPU throws away in-progress work and restarts.</p>
 
       <!-- v2: rare flushes -->
-      <p style="color:var(--green); font-weight:700; margin-bottom:0.4rem; text-align:left; font-size:0.9rem;">v2 — CFROUND conditional (1/16 chance):</p>
+      <p style="color:var(--green); font-weight:700; margin-bottom:0.4rem; text-align:left; font-size:0.9rem;">v2 - CFROUND conditional (1/16 chance):</p>
       <div style="display:flex; gap:1px; margin-bottom:0.4rem; height:28px;">
         <div style="flex:15; background:var(--green); border-radius:3px 0 0 3px;"></div>
         <div style="flex:0.4; background:var(--red); display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700;">FLUSH</div>
@@ -651,91 +658,171 @@
   <p>
     The total operations per hash tell the story: v1 performs <strong>4,456,448</strong> total ops
     (4.2M VM + 262K AES), while v2 performs <strong>6,815,744</strong> total ops
-    (6.3M VM + 524K AES) — a <strong>52.9% increase</strong> in work per hash.
+    (6.3M VM + 524K AES) - a <strong>52.9% increase</strong> in work per hash.
   </p>
   <p>
     Raw hashrate (hashes/second) may drop slightly on some CPUs, but the <em>work per joule</em>
-    — the metric that actually matters — improves dramatically:
+    - the metric that actually matters - improves dramatically:
   </p>
 
   <table>
     <thead>
       <tr>
         <th>Processor</th>
+        <th>Arch</th>
         <th>Hashrate Change</th>
         <th>Work/Joule Improvement</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td>AMD Ryzen AI 9 HX 370</td>
+        <td>Ryzen AI 9 365</td>
+        <td>Zen 5</td>
+        <td style="color:var(--green);">+9.2%</td>
+        <td style="color:var(--green); font-weight:700;">+67.0%</td>
+      </tr>
+      <tr>
+        <td>Ryzen AI 9 HX 370</td>
+        <td>Zen 5</td>
         <td style="color:var(--green);">+8.0%</td>
         <td style="color:var(--green); font-weight:700;">+65.1%</td>
       </tr>
       <tr>
-        <td>AMD Ryzen 9 7945HX</td>
-        <td style="color:var(--red);">-5.1%</td>
-        <td style="color:var(--green); font-weight:700;">+45.2%</td>
+        <td>Ryzen 7 1700X</td>
+        <td>Zen 1</td>
+        <td style="color:var(--green);">+0.8%</td>
+        <td style="color:var(--green); font-weight:700;">+54.1%</td>
       </tr>
       <tr>
-        <td>Intel Core i9-12900K</td>
+        <td>Core i9-12900K</td>
+        <td>Alder Lake</td>
         <td style="color:var(--red);">-3.9%</td>
         <td style="color:var(--green); font-weight:700;">+47.0%</td>
       </tr>
       <tr>
-        <td>AMD Ryzen 9 5950X</td>
+        <td>Ryzen 9 7945HX</td>
+        <td>Zen 4</td>
+        <td style="color:var(--red);">-5.1%</td>
+        <td style="color:var(--green); font-weight:700;">+45.2%</td>
+      </tr>
+      <tr>
+        <td>Ryzen 9 3950X</td>
+        <td>Zen 2</td>
+        <td style="color:var(--red);">-7.9%</td>
+        <td style="color:var(--green); font-weight:700;">+40.9%</td>
+      </tr>
+      <tr>
+        <td>Ryzen 5 8600G</td>
+        <td>Zen 4</td>
+        <td style="color:var(--red);">-8.5%</td>
+        <td style="color:var(--green); font-weight:700;">+39.9%</td>
+      </tr>
+      <tr>
+        <td>Ryzen 9 5950X</td>
+        <td>Zen 3</td>
         <td style="color:var(--red);">-12.5%</td>
         <td style="color:var(--green); font-weight:700;">+38.2%</td>
       </tr>
       <tr>
-        <td>AMD Ryzen 7 1700</td>
-        <td style="color:var(--green);">+8.4%</td>
-        <td style="color:var(--green); font-weight:700;">significant gain</td>
+        <td>Ryzen 7 3700X</td>
+        <td>Zen 2</td>
+        <td style="color:var(--red);">-14.7%</td>
+        <td style="color:var(--green); font-weight:700;">+30.5%</td>
+      </tr>
+      <tr>
+        <td>Core i7-8650U</td>
+        <td>Kaby Lake-R</td>
+        <td style="color:var(--red);">-22.7%</td>
+        <td style="color:var(--green); font-weight:700;">+18.2%</td>
+      </tr>
+      <tr>
+        <td>Core i7-6820HQ</td>
+        <td>Skylake</td>
+        <td style="color:var(--red);">-24.4%</td>
+        <td style="color:var(--green); font-weight:700;">+15.6%</td>
       </tr>
     </tbody>
   </table>
 
   <div class="diagram">
-    <strong style="color: var(--accent);">Work/Joule Improvement by CPU</strong>
-    <div style="margin:1.5rem auto; max-width:650px;">
-      <!-- Ryzen AI 9 HX 370 -->
-      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
-        <span style="width:170px; text-align:right; font-size:0.8rem; color:#aaa; white-space:nowrap;">Ryzen AI 9 HX 370</span>
-        <div style="flex:1; background:#2a2a4a; border-radius:6px; height:28px; position:relative; overflow:hidden;">
-          <div style="width:65.1%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:6px; display:flex; align-items:center; padding-left:8px; font-size:0.8rem; font-weight:700; color:#1a1a2e;">+65.1%</div>
+    <strong style="color: var(--accent);">Work/Joule Improvement by CPU (VM+AES ops per Joule)</strong>
+    <div style="margin:1.5rem auto; max-width:680px;">
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Ryzen AI 9 365 <span style="color:#555;">(Zen5)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:100%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+67.0%</div>
         </div>
       </div>
-      <!-- i9-12900K -->
-      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
-        <span style="width:170px; text-align:right; font-size:0.8rem; color:#aaa; white-space:nowrap;">Core i9-12900K</span>
-        <div style="flex:1; background:#2a2a4a; border-radius:6px; height:28px; position:relative; overflow:hidden;">
-          <div style="width:47%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:6px; display:flex; align-items:center; padding-left:8px; font-size:0.8rem; font-weight:700; color:#1a1a2e;">+47.0%</div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Ryzen AI 9 HX 370 <span style="color:#555;">(Zen5)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:97%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+65.1%</div>
         </div>
       </div>
-      <!-- Ryzen 9 7945HX -->
-      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
-        <span style="width:170px; text-align:right; font-size:0.8rem; color:#aaa; white-space:nowrap;">Ryzen 9 7945HX</span>
-        <div style="flex:1; background:#2a2a4a; border-radius:6px; height:28px; position:relative; overflow:hidden;">
-          <div style="width:45.2%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:6px; display:flex; align-items:center; padding-left:8px; font-size:0.8rem; font-weight:700; color:#1a1a2e;">+45.2%</div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Ryzen 7 1700X <span style="color:#555;">(Zen1)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:81%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+54.1%</div>
         </div>
       </div>
-      <!-- Ryzen 9 5950X -->
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Core i9-12900K <span style="color:#555;">(Alder)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:70%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+47.0%</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Ryzen 9 7945HX <span style="color:#555;">(Zen4)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:67%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+45.2%</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Ryzen 9 3950X <span style="color:#555;">(Zen2)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:61%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+40.9%</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Ryzen 5 8600G <span style="color:#555;">(Zen4)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:60%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+39.9%</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Ryzen 9 5950X <span style="color:#555;">(Zen3)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:57%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+38.2%</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Ryzen 7 3700X <span style="color:#555;">(Zen2)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:46%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+30.5%</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Core i7-8650U <span style="color:#555;">(KBL-R)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:27%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+18.2%</div>
+        </div>
+      </div>
       <div style="display:flex; align-items:center; gap:0.5rem;">
-        <span style="width:170px; text-align:right; font-size:0.8rem; color:#aaa; white-space:nowrap;">Ryzen 9 5950X</span>
-        <div style="flex:1; background:#2a2a4a; border-radius:6px; height:28px; position:relative; overflow:hidden;">
-          <div style="width:38.2%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:6px; display:flex; align-items:center; padding-left:8px; font-size:0.8rem; font-weight:700; color:#1a1a2e;">+38.2%</div>
+        <span style="width:155px; text-align:right; font-size:0.75rem; color:#aaa; white-space:nowrap;">Core i7-6820HQ <span style="color:#555;">(SKL)</span></span>
+        <div style="flex:1; background:#2a2a4a; border-radius:5px; height:24px; overflow:hidden;">
+          <div style="width:23%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:5px; display:flex; align-items:center; padding-left:8px; font-size:0.75rem; font-weight:700; color:#1a1a2e;">+15.6%</div>
         </div>
       </div>
     </div>
     <p style="color:#aaa; font-size:0.85rem; margin-top:0.8rem;">
-      Every tested CPU shows a massive efficiency gain — even those with lower raw hashrate.
+      Every tested CPU shows a significant efficiency gain - newer architectures benefit the most.
     </p>
   </div>
 
   <div class="callout">
     <strong>Why "work per joule" matters more than hashrate:</strong> A hash in v2 proves 53% more
     computational work than a hash in v1. Even if your CPU produces fewer hashes per second, it's
-    doing more <em>total work</em> — and doing it more efficiently per watt of power consumed.
+    doing more <em>total work</em> - and doing it more efficiently per watt of power consumed.
     For miners, this means lower electricity bills for the same level of network security contribution.
   </div>
 </section>
@@ -748,7 +835,7 @@
   <ul>
     <li>
       <strong>More instructions per program</strong> means a custom chip needs a more complex
-      execution engine — closer to a full general-purpose CPU.
+      execution engine - closer to a full general-purpose CPU.
     </li>
     <li>
       <strong>AES in the main loop</strong> means any hardware must include AES circuitry
@@ -760,7 +847,7 @@
     </li>
     <li>
       <strong>Conditional CFROUND</strong> rewards CPUs with fast, flexible floating-point
-      pipelines — exactly what general-purpose processors have and ASICs typically lack.
+      pipelines - exactly what general-purpose processors have and ASICs typically lack.
     </li>
   </ul>
   <p>
@@ -799,7 +886,8 @@
 <section>
   <h2>Sources &amp; Further Reading</h2>
   <ul>
-    <li><a href="https://github.com/tevador/RandomX/pull/274" style="color:var(--accent);">PR #274 — RandomX v2 Virtual Machine Changes</a> (tevador/RandomX)</li>
+    <li><a href="https://github.com/SChernykh/RandomX/blob/v2/doc/design_v2.md" style="color:var(--accent);">RandomX v2 Design Document</a> (authoritative specification and benchmark data)</li>
+    <li><a href="https://github.com/tevador/RandomX/pull/274" style="color:var(--accent);">PR #274 - RandomX v2 Virtual Machine Changes</a> (tevador/RandomX)</li>
     <li><a href="https://gist.github.com/SChernykh/6058ecf01c929883b9d19c7eeadc8809" style="color:var(--accent);">RandomX v2 Testing Results</a> (SChernykh benchmark data)</li>
     <li><a href="https://github.com/tevador/RandomX/blob/master/doc/design.md" style="color:var(--accent);">RandomX Design Documentation</a> (latency hiding &amp; architecture)</li>
     <li><a href="https://github.com/SChernykh/RandomX" style="color:var(--accent);">SChernykh/RandomX</a> (v2 implementation repository)</li>
@@ -809,7 +897,7 @@
 </div>
 
 <footer>
-  <p>RandomX v2 Benchmark Suite &mdash; <a href="https://github.com/SChernykh/RandomX" style="color:var(--accent);">github.com/SChernykh/RandomX</a></p>
+  <p>RandomX v2 Benchmark Suite - <a href="https://github.com/SChernykh/RandomX" style="color:var(--accent);">github.com/SChernykh/RandomX</a></p>
 </footer>
 
 </body>
