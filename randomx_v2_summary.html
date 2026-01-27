@@ -441,6 +441,371 @@
   </div>
 </section>
 
+<!-- ============================================================ -->
+<!-- DEEP DIVE — Technical Details                                 -->
+<!-- ============================================================ -->
+
+<section>
+  <h2 style="margin-top:2rem;">Deep Dive: The v1 Idle-Cycle Problem</h2>
+  <p>
+    To understand why v2 exists, you need to understand a fundamental tension inside your CPU:
+    <strong>computation is fast, but fetching data from memory is slow.</strong>
+  </p>
+  <p>
+    RandomX's main loop works by repeatedly executing a small random program and then reading
+    a chunk of data (64 bytes) from a large <em>Dataset</em> stored in RAM. Each program iteration
+    is deliberately tuned to take about <strong>50&ndash;100 nanoseconds</strong> — roughly the same
+    time it takes for DRAM to deliver data. The idea is that the CPU computes while the next
+    piece of data is being fetched in the background (prefetched), so neither the CPU nor the
+    memory bus sits idle.
+  </p>
+
+  <div class="diagram">
+    <strong style="color: var(--accent);">v1: The Idle Gap</strong>
+    <div style="margin:1.5rem auto; max-width:700px; text-align:left;">
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+        <span style="width:90px; text-align:right; font-size:0.85rem; color:#aaa;">CPU</span>
+        <div style="flex:1; display:flex; height:32px; border-radius:6px; overflow:hidden;">
+          <div style="width:55%; background:var(--blue); display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700;">Compute (256 instructions)</div>
+          <div style="width:25%; background:#e84545; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; color:#fff;">Idle &mdash; waiting</div>
+          <div style="width:20%; background:var(--blue); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:600;">AES (XOR mix)</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        <span style="width:90px; text-align:right; font-size:0.85rem; color:#aaa;">Memory</span>
+        <div style="flex:1; display:flex; height:32px; border-radius:6px; overflow:hidden;">
+          <div style="width:15%; background:transparent;"></div>
+          <div style="width:55%; background:var(--accent); display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; color:#1a1a2e;">Fetching dataset (50–100 ns)</div>
+          <div style="width:30%; background:transparent;"></div>
+        </div>
+      </div>
+    </div>
+    <p style="color:#e84545; font-size:0.9rem; margin-top:0.5rem;">
+      In v1, the CPU finishes its 256-instruction program and the simple XOR register mix
+      <strong>before</strong> the memory fetch completes. It stalls, doing nothing, wasting energy.
+    </p>
+  </div>
+
+  <p>
+    This idle window is the core inefficiency of v1. The CPU has finished all its work
+    but the next piece of dataset hasn't arrived yet. Those wasted cycles still consume
+    power — your CPU is burning electricity while doing zero useful work.
+  </p>
+</section>
+
+<section>
+  <h2>How v2 Fills the Gap</h2>
+  <p>
+    RandomX v2 makes two key changes to eliminate the idle window:
+  </p>
+
+  <div class="card-row">
+    <div class="card">
+      <h3>1. Bigger Programs (256 &rarr; 384 instructions)</h3>
+      <p>
+        Each iteration now runs <strong>384 instructions</strong> instead of 256 — a 50% increase.
+        This keeps the CPU's execution units busy for longer, filling more of the memory-wait gap
+        with real computation.
+      </p>
+    </div>
+    <div class="card">
+      <h3>2. AES Register Mixing (XOR &rarr; 16 AES rounds)</h3>
+      <p>
+        In v1, the F and E registers were mixed with a simple XOR — nearly instant.
+        In v2, they're mixed with <strong>16 AES encryption rounds</strong>. This uses the
+        CPU's dedicated AES hardware during what was previously dead time.
+      </p>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <strong style="color: var(--accent);">v2: The Gap is Gone</strong>
+    <div style="margin:1.5rem auto; max-width:700px; text-align:left;">
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+        <span style="width:90px; text-align:right; font-size:0.85rem; color:#aaa;">CPU</span>
+        <div style="flex:1; display:flex; height:32px; border-radius:6px; overflow:hidden;">
+          <div style="width:62%; background:var(--blue); display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700;">Compute (384 instructions)</div>
+          <div style="width:38%; background:var(--green); display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; color:#1a1a2e;">16&times; AES mixing</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        <span style="width:90px; text-align:right; font-size:0.85rem; color:#aaa;">Memory</span>
+        <div style="flex:1; display:flex; height:32px; border-radius:6px; overflow:hidden;">
+          <div style="width:8%; background:transparent;"></div>
+          <div style="width:55%; background:var(--accent); display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; color:#1a1a2e;">Fetching dataset (50–100 ns)</div>
+          <div style="width:37%; background:transparent;"></div>
+        </div>
+      </div>
+    </div>
+    <p style="color:var(--green); font-size:0.9rem; margin-top:0.5rem;">
+      The CPU is now busy the <strong>entire time</strong> data is being fetched.
+      No wasted cycles. No wasted energy.
+    </p>
+  </div>
+
+  <div class="callout">
+    <strong>The AES trick is especially clever:</strong> it doesn't just fill idle time — it also
+    strengthens ASIC resistance. In v1, a custom chip could skip AES in the main loop because it
+    was only used for scratchpad initialization. In v2, AES is woven directly into the VM's core
+    register mixing, so any hardware implementation <em>must</em> include a full AES engine inside
+    the RandomX virtual machine itself.
+  </div>
+</section>
+
+<section>
+  <h2>The Prefetch Distance Change</h2>
+  <p>
+    The second major optimization is about <strong>how far ahead</strong> the CPU looks when
+    pre-loading data from RAM.
+  </p>
+
+  <div class="card-row">
+    <div class="card">
+      <h3>v1: Prefetch 1 Iteration Ahead</h3>
+      <p>
+        While running iteration N, the CPU requests the data for iteration N+1.
+        On faster modern CPUs, this isn't enough lead time — the data may not arrive
+        before it's needed, causing a stall.
+      </p>
+    </div>
+    <div class="card">
+      <h3>v2: Prefetch 2 Iterations Ahead</h3>
+      <p>
+        While running iteration N, the CPU requests data for iteration N+2.
+        This gives DRAM twice as long to deliver, virtually guaranteeing the data
+        is ready when needed — even on the fastest modern processors.
+      </p>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <strong style="color: var(--accent);">Prefetch Timeline</strong>
+    <div style="margin:1.5rem auto; max-width:720px; text-align:left; font-size:0.85rem;">
+      <p style="color:var(--blue); font-weight:700; margin-bottom:0.3rem;">v1 (1 iteration lookahead):</p>
+      <div style="display:flex; gap:2px; margin-bottom:1rem;">
+        <div style="flex:1; background:var(--blue); border-radius:4px; padding:6px; text-align:center; font-weight:600;">Iter N<br><span style="font-size:0.75rem; color:#ccc;">prefetch N+1</span></div>
+        <div style="flex:1; background:var(--blue); border-radius:4px; padding:6px; text-align:center; font-weight:600;">Iter N+1<br><span style="font-size:0.75rem; color:#e84545;">data may not be ready!</span></div>
+        <div style="flex:1; background:var(--blue); border-radius:4px; padding:6px; text-align:center; font-weight:600;">Iter N+2</div>
+      </div>
+      <p style="color:var(--green); font-weight:700; margin-bottom:0.3rem;">v2 (2 iteration lookahead):</p>
+      <div style="display:flex; gap:2px;">
+        <div style="flex:1; background:var(--green); border-radius:4px; padding:6px; text-align:center; font-weight:600; color:#1a1a2e;">Iter N<br><span style="font-size:0.75rem;">prefetch N+2</span></div>
+        <div style="flex:1; background:var(--green); border-radius:4px; padding:6px; text-align:center; font-weight:600; color:#1a1a2e;">Iter N+1<br><span style="font-size:0.75rem;">prefetch N+3</span></div>
+        <div style="flex:1; background:var(--green); border-radius:4px; padding:6px; text-align:center; font-weight:600; color:#1a1a2e;">Iter N+2<br><span style="font-size:0.75rem;">data ready &check;</span></div>
+      </div>
+    </div>
+    <p style="color:#aaa; font-size:0.85rem; margin-top:0.8rem;">
+      By requesting data two iterations in advance, the memory system has twice as long
+      to deliver — eliminating stalls on fast modern CPUs.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>The CFROUND Optimization</h2>
+  <p>
+    A third, more subtle change targets floating-point performance. The <code>CFROUND</code>
+    instruction controls the CPU's rounding mode for floating-point math. In v1, it executed
+    frequently — but changing the rounding mode is <strong>expensive</strong> on modern CPUs
+    because it forces the processor to flush its instruction pipeline.
+  </p>
+  <p>
+    In v2, <code>CFROUND</code> becomes <strong>conditional</strong>, executing only 1/16th of the
+    time. This dramatically reduces pipeline flushes. On AMD Zen 1 CPUs, this single change
+    yielded an <strong>8.4% hashrate increase</strong>, with 5&ndash;10% gains expected across
+    AMD architectures.
+  </p>
+
+  <div class="diagram">
+    <strong style="color: var(--accent);">Pipeline Flush Frequency</strong>
+    <div style="margin:1.5rem auto; max-width:600px;">
+      <!-- v1: frequent flushes -->
+      <p style="color:var(--blue); font-weight:700; margin-bottom:0.4rem; text-align:left; font-size:0.9rem;">v1 — CFROUND fires often (every ~16 instructions):</p>
+      <div style="display:flex; gap:1px; margin-bottom:0.4rem; height:28px;">
+        <div style="flex:3; background:var(--blue); border-radius:3px 0 0 3px;"></div>
+        <div style="flex:0.4; background:var(--red); display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700;">FLUSH</div>
+        <div style="flex:3; background:var(--blue);"></div>
+        <div style="flex:0.4; background:var(--red); display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700;">FLUSH</div>
+        <div style="flex:3; background:var(--blue);"></div>
+        <div style="flex:0.4; background:var(--red); display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700;">FLUSH</div>
+        <div style="flex:3; background:var(--blue);"></div>
+        <div style="flex:0.4; background:var(--red); display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700;">FLUSH</div>
+        <div style="flex:3; background:var(--blue); border-radius:0 3px 3px 0;"></div>
+      </div>
+      <p style="color:#e84545; font-size:0.8rem; text-align:left; margin-bottom:1.2rem;">Each red bar = pipeline flush. CPU throws away in-progress work and restarts.</p>
+
+      <!-- v2: rare flushes -->
+      <p style="color:var(--green); font-weight:700; margin-bottom:0.4rem; text-align:left; font-size:0.9rem;">v2 — CFROUND conditional (1/16 chance):</p>
+      <div style="display:flex; gap:1px; margin-bottom:0.4rem; height:28px;">
+        <div style="flex:15; background:var(--green); border-radius:3px 0 0 3px;"></div>
+        <div style="flex:0.4; background:var(--red); display:flex; align-items:center; justify-content:center; font-size:0.6rem; font-weight:700;">FLUSH</div>
+        <div style="flex:15; background:var(--green); border-radius:0 3px 3px 0;"></div>
+      </div>
+      <p style="color:var(--green); font-size:0.8rem; text-align:left;">Rarely interrupted. The CPU's pipeline stays full almost all the time.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Real-World Benchmark Results</h2>
+  <p>
+    The total operations per hash tell the story: v1 performs <strong>4,456,448</strong> total ops
+    (4.2M VM + 262K AES), while v2 performs <strong>6,815,744</strong> total ops
+    (6.3M VM + 524K AES) — a <strong>52.9% increase</strong> in work per hash.
+  </p>
+  <p>
+    Raw hashrate (hashes/second) may drop slightly on some CPUs, but the <em>work per joule</em>
+    — the metric that actually matters — improves dramatically:
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Processor</th>
+        <th>Hashrate Change</th>
+        <th>Work/Joule Improvement</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>AMD Ryzen AI 9 HX 370</td>
+        <td style="color:var(--green);">+8.0%</td>
+        <td style="color:var(--green); font-weight:700;">+65.1%</td>
+      </tr>
+      <tr>
+        <td>AMD Ryzen 9 7945HX</td>
+        <td style="color:var(--red);">-5.1%</td>
+        <td style="color:var(--green); font-weight:700;">+45.2%</td>
+      </tr>
+      <tr>
+        <td>Intel Core i9-12900K</td>
+        <td style="color:var(--red);">-3.9%</td>
+        <td style="color:var(--green); font-weight:700;">+47.0%</td>
+      </tr>
+      <tr>
+        <td>AMD Ryzen 9 5950X</td>
+        <td style="color:var(--red);">-12.5%</td>
+        <td style="color:var(--green); font-weight:700;">+38.2%</td>
+      </tr>
+      <tr>
+        <td>AMD Ryzen 7 1700</td>
+        <td style="color:var(--green);">+8.4%</td>
+        <td style="color:var(--green); font-weight:700;">significant gain</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="diagram">
+    <strong style="color: var(--accent);">Work/Joule Improvement by CPU</strong>
+    <div style="margin:1.5rem auto; max-width:650px;">
+      <!-- Ryzen AI 9 HX 370 -->
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+        <span style="width:170px; text-align:right; font-size:0.8rem; color:#aaa; white-space:nowrap;">Ryzen AI 9 HX 370</span>
+        <div style="flex:1; background:#2a2a4a; border-radius:6px; height:28px; position:relative; overflow:hidden;">
+          <div style="width:65.1%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:6px; display:flex; align-items:center; padding-left:8px; font-size:0.8rem; font-weight:700; color:#1a1a2e;">+65.1%</div>
+        </div>
+      </div>
+      <!-- i9-12900K -->
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+        <span style="width:170px; text-align:right; font-size:0.8rem; color:#aaa; white-space:nowrap;">Core i9-12900K</span>
+        <div style="flex:1; background:#2a2a4a; border-radius:6px; height:28px; position:relative; overflow:hidden;">
+          <div style="width:47%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:6px; display:flex; align-items:center; padding-left:8px; font-size:0.8rem; font-weight:700; color:#1a1a2e;">+47.0%</div>
+        </div>
+      </div>
+      <!-- Ryzen 9 7945HX -->
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+        <span style="width:170px; text-align:right; font-size:0.8rem; color:#aaa; white-space:nowrap;">Ryzen 9 7945HX</span>
+        <div style="flex:1; background:#2a2a4a; border-radius:6px; height:28px; position:relative; overflow:hidden;">
+          <div style="width:45.2%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:6px; display:flex; align-items:center; padding-left:8px; font-size:0.8rem; font-weight:700; color:#1a1a2e;">+45.2%</div>
+        </div>
+      </div>
+      <!-- Ryzen 9 5950X -->
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        <span style="width:170px; text-align:right; font-size:0.8rem; color:#aaa; white-space:nowrap;">Ryzen 9 5950X</span>
+        <div style="flex:1; background:#2a2a4a; border-radius:6px; height:28px; position:relative; overflow:hidden;">
+          <div style="width:38.2%; height:100%; background:linear-gradient(90deg, var(--green), #2ecc71); border-radius:6px; display:flex; align-items:center; padding-left:8px; font-size:0.8rem; font-weight:700; color:#1a1a2e;">+38.2%</div>
+        </div>
+      </div>
+    </div>
+    <p style="color:#aaa; font-size:0.85rem; margin-top:0.8rem;">
+      Every tested CPU shows a massive efficiency gain — even those with lower raw hashrate.
+    </p>
+  </div>
+
+  <div class="callout">
+    <strong>Why "work per joule" matters more than hashrate:</strong> A hash in v2 proves 53% more
+    computational work than a hash in v1. Even if your CPU produces fewer hashes per second, it's
+    doing more <em>total work</em> — and doing it more efficiently per watt of power consumed.
+    For miners, this means lower electricity bills for the same level of network security contribution.
+  </div>
+</section>
+
+<section>
+  <h2>The Bigger Picture: ASIC Resistance</h2>
+  <p>
+    All of these changes share a common theme: making it <strong>harder to build a shortcut</strong>.
+  </p>
+  <ul>
+    <li>
+      <strong>More instructions per program</strong> means a custom chip needs a more complex
+      execution engine — closer to a full general-purpose CPU.
+    </li>
+    <li>
+      <strong>AES in the main loop</strong> means any hardware must include AES circuitry
+      tightly integrated with the VM, not just bolted on for initialization.
+    </li>
+    <li>
+      <strong>Deeper prefetch</strong> means the algorithm is tuned for how real CPUs and real
+      DRAM actually behave, giving no advantage to exotic memory architectures.
+    </li>
+    <li>
+      <strong>Conditional CFROUND</strong> rewards CPUs with fast, flexible floating-point
+      pipelines — exactly what general-purpose processors have and ASICs typically lack.
+    </li>
+  </ul>
+  <p>
+    The net effect: a CPU designed for everyday computing (browsing, compiling, gaming) is
+    also the ideal machine for RandomX v2. No specialized hardware can do it significantly better.
+  </p>
+
+  <div class="diagram">
+    <strong style="color: var(--accent);">Layers of ASIC Resistance in v2</strong>
+    <div style="margin:1.5rem auto; max-width:500px;">
+      <!-- Outermost layer -->
+      <div style="border:2px solid var(--accent); border-radius:16px; padding:1rem; background:rgba(247,147,26,0.05);">
+        <div style="text-align:center; font-size:0.85rem; font-weight:700; color:var(--accent); margin-bottom:0.6rem;">Conditional CFROUND (flexible FP pipeline required)</div>
+        <!-- Layer 2 -->
+        <div style="border:2px solid var(--green); border-radius:12px; padding:1rem; background:rgba(78,204,163,0.05);">
+          <div style="text-align:center; font-size:0.85rem; font-weight:700; color:var(--green); margin-bottom:0.6rem;">Deeper Prefetch (real DRAM behavior required)</div>
+          <!-- Layer 3 -->
+          <div style="border:2px solid var(--blue); border-radius:10px; padding:1rem; background:rgba(52,152,219,0.05);">
+            <div style="text-align:center; font-size:0.85rem; font-weight:700; color:var(--blue); margin-bottom:0.6rem;">AES in Main Loop (full AES engine in VM)</div>
+            <!-- Core -->
+            <div style="border:2px solid var(--light); border-radius:8px; padding:0.8rem; background:rgba(232,232,232,0.08); text-align:center;">
+              <div style="font-size:0.85rem; font-weight:700; color:var(--light);">384-Instruction Programs</div>
+              <div style="font-size:0.75rem; color:#aaa; margin-top:0.2rem;">Complex execution engine needed</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p style="color:#aaa; font-size:0.8rem; margin-top:1rem;">
+        An ASIC must defeat <em>every</em> layer to gain an advantage.<br>
+        Each layer pushes the design closer to a general-purpose CPU.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Sources &amp; Further Reading</h2>
+  <ul>
+    <li><a href="https://github.com/tevador/RandomX/pull/274" style="color:var(--accent);">PR #274 — RandomX v2 Virtual Machine Changes</a> (tevador/RandomX)</li>
+    <li><a href="https://gist.github.com/SChernykh/6058ecf01c929883b9d19c7eeadc8809" style="color:var(--accent);">RandomX v2 Testing Results</a> (SChernykh benchmark data)</li>
+    <li><a href="https://github.com/tevador/RandomX/blob/master/doc/design.md" style="color:var(--accent);">RandomX Design Documentation</a> (latency hiding &amp; architecture)</li>
+    <li><a href="https://github.com/SChernykh/RandomX" style="color:var(--accent);">SChernykh/RandomX</a> (v2 implementation repository)</li>
+  </ul>
+</section>
+
 </div>
 
 <footer>
