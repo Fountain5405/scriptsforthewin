@@ -8,7 +8,7 @@
 # - Measures power consumption via RAPL
 #
 # Usage: sudo ./randomx_benchmark_full.sh [OPTIONS]
-#   --runs N    Number of benchmark runs per version (default: 100)
+#   --runs N    Number of benchmark runs per version (default: 2)
 #   --nonces N  Number of nonces per run (default: 1000000)
 #   --no-msr    Disable MSR optimizations
 #   --old-cpu   Old CPU mode (no RAPL, no MSR, software AES)
@@ -17,7 +17,7 @@ set -e
 set -o pipefail
 
 # Default number of runs
-NUM_RUNS=100
+NUM_RUNS=2
 # Default nonces per run
 NONCES=1000000
 # MSR optimizations enabled by default
@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             echo "Usage: sudo $0 [OPTIONS]"
-            echo "  --runs N, -r N    Number of benchmark runs per version (default: 100)"
+            echo "  --runs N, -r N    Number of benchmark runs per version (default: 2)"
             echo "  --nonces N, -n N  Number of nonces per run (default: 1000000)"
             echo "  --no-msr          Disable MSR optimizations"
             echo "  --old-cpu         Old CPU mode (no RAPL, no MSR, software AES)"
