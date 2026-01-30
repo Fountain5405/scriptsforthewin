@@ -174,88 +174,49 @@ function Install-PortableTools {
     # Download MinGW-w64
     if ($needMinGW) {
         Write-Host "  Downloading MinGW-w64..."
-        # Use a more reliable mirror - Murray's build of MinGW-w64
-        $mingwUrl = "https://github.com/niXman/mingw-builds-binaries/releases/download/14.2.0-rt_v12-rev0/i686-14.2.0-release-posix-dwarf-msvcrt-rt_v12-rev0.7z"
-        # Or use the winlibs release with proper download handling
-        $mingwUrl = "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0-19.1/winlibs-x86_64-posix-seh-gcc-14.2.0-mingw-w64msvcrt-12.0.0-r1.7z"
 
-        # Changed to .7z format which is more reliable for large archives
-        # But we need 7zip, so let's use a direct zip with fallback
-        $mingwUrl = "https://github.com/niXman/mingw-builds-binaries/releases/download/13.2.0-rt_v11-rev0/x86_64-13.2.0-release-posix-seh-msvcrt-rt_v11-rev0.zip"
+        # Multiple reliable sources with fallback
+        $downloadSources = @(
+            @{
+                Url = "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.1.0-18.0 posix-14.1.0-mcf-seh-gc-18.0.0-msvcrt-rt_v12-multilib.zip"
+                Name = "WinLibs (GCC 14.1)"
+            },
+            @{
+                Url = "https://github.com/brechtsanders/winlibs_mingw/releases/download/13.2.0-17.0 posix-13.2.0-mcf-seh-gc-17.0.0-msvcrt-rt_v12-multilib.zip"
+                Name = "WinLibs (GCC 13.2)"
+            },
+            @{
+                Url = "https://github.com/brechtsanders/winlibs_mingw/releases/download/12.2.0-16.0 posix-12.2.0-mcf-seh-gc-16.0.0-msvcrt-rt_v11-multilib.zip"
+                Name = "WinLibs (GCC 12.2)"
+            }
+        )
+
+        $success = $false
         $mingwZip = Join-Path $script:PortableDir "mingw.zip"
 
-        try {
-            # Use Invoke-WebRequest with Progress for reliable download
-            Write-Host "    Starting download (large file ~100MB)..."
-            $ProgressPreference = 'SilentlyContinue'  # Speed up download
-            Invoke-WebRequest -Uri $mingwUrl -OutFile $mingwZip -UseBasicParsing -TimeoutSec 300
-            $ProgressPreference = 'Continue'
+        foreach ($source in $downloadSources) {
+            if ($success) { break }
 
-            # Verify file was downloaded and is valid
-            $fileInfo = Get-Item $mingwZip
-            if ($fileInfo.Length -lt 1MB) {
-                throw "Downloaded file is too small - may be incomplete"
-            }
-
-            Write-Host "    Downloaded: $([math]::Round($fileInfo.Length / 1MB, 1)) MB"
-            Write-Host "    Extracting MinGW (this will take a few minutes)..."
-
-            $mingwTemp = Join-Path $script:PortableDir "mingw_temp"
-            if (Test-Path $mingwTemp) { Remove-Item $mingwTemp -Recurse -Force }
-            New-Item -ItemType Directory -Path $mingwTemp -Force | Out-Null
-
-            # Use .NET extraction for better performance on large files
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            [System.IO.Compression.ZipFile]::ExtractToDirectory($mingwZip, $mingwTemp)
-
-            # Find the mingw64 folder (may be in a subdirectory)
-            $extractedRoot = Get-ChildItem $mingwTemp -Directory | Select-Object -First 1
-            if ($extractedRoot) {
-                # Check if mingw64 is directly in temp or in a subfolder
-                $mingwExtracted = Join-Path $mingwTemp "mingw64"
-                if (-not (Test-Path $mingwExtracted)) {
-                    $mingwExtracted = Join-Path $extractedRoot.FullName "mingw64"
-                }
-
-                if (Test-Path $mingwExtracted) {
-                    $targetPath = Join-Path $script:PortableDir "mingw64"
-                    if (Test-Path $targetPath) { Remove-Item $targetPath -Recurse -Force }
-
-                    # Move contents directly (not the mingw64 folder itself)
-                    Copy-Item "$mingwExtracted\*" $targetPath -Recurse -Force
-                } else {
-                    # Just move whatever was extracted
-                    $targetPath = Join-Path $script:PortableDir "mingw64"
-                    if (Test-Path $targetPath) { Remove-Item $targetPath -Recurse -Force }
-                    Move-Item $extractedRoot.FullName $targetPath -Force
-                }
-            }
-
-            # Cleanup
-            Remove-Item $mingwZip -Force -ErrorAction SilentlyContinue
-            Remove-Item $mingwTemp -Recurse -Force -ErrorAction SilentlyContinue
-
-            # Verify installation
-            $gccPath = Join-Path $script:PortableDir "mingw64\bin\gcc.exe"
-            if (Test-Path $gccPath) {
-                Write-Host "    MinGW installed successfully" -ForegroundColor Green
-            } else {
-                throw "gcc.exe not found after extraction"
-            }
-        } catch {
-            Write-Host "    Failed to download/extract MinGW: $_" -ForegroundColor Red
-            Write-Host "    Trying alternative source..." -ForegroundColor Yellow
-
-            # Fallback: Use a smaller, older version
             try {
-                $altUrl = "https://github.com/niXman/mingw-builds-binaries/releases/download/12.2.0-rt_v10-rev1/x86_64-12.2.0-release-posix-seh-msvcrt-rt_v10-rev1.zip"
-                $mingwZip = Join-Path $script:PortableDir "mingw.zip"
-                if (Test-Path $mingwZip) { Remove-Item $mingwZip -Force }
-
-                Write-Host "    Downloading alternative MinGW (12.2.0, ~50MB)..."
+                Write-Host "    Trying: $($source.Name)..."
                 $ProgressPreference = 'SilentlyContinue'
-                Invoke-WebRequest -Uri $altUrl -OutFile $mingwZip -UseBasicParsing -TimeoutSec 300
+
+                # Use WebClient with proper headers
+                $webClient = New-Object System.Net.WebClient
+                $webClient.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                $webClient.DownloadFile($source.Url, $mingwZip)
+
                 $ProgressPreference = 'Continue'
+
+                $fileInfo = Get-Item $mingwZip
+                if ($fileInfo.Length -lt 5MB) {
+                    Write-Host "      Download too small, trying next..." -ForegroundColor Yellow
+                    Remove-Item $mingwZip -Force -ErrorAction SilentlyContinue
+                    continue
+                }
+
+                Write-Host "      Downloaded: $([math]::Round($fileInfo.Length / 1MB, 1)) MB" -ForegroundColor Green
+                Write-Host "      Extracting (this may take a few minutes)..."
 
                 $mingwTemp = Join-Path $script:PortableDir "mingw_temp"
                 if (Test-Path $mingwTemp) { Remove-Item $mingwTemp -Recurse -Force }
@@ -264,25 +225,78 @@ function Install-PortableTools {
                 Add-Type -AssemblyName System.IO.Compression.FileSystem
                 [System.IO.Compression.ZipFile]::ExtractToDirectory($mingwZip, $mingwTemp)
 
-                $extractedRoot = Get-ChildItem $mingwTemp -Directory | Select-Object -First 1
+                # WinLibs structure: mingw64 is at the root
                 $mingwExtracted = Join-Path $mingwTemp "mingw64"
                 if (-not (Test-Path $mingwExtracted)) {
-                    $mingwExtracted = Join-Path $extractedRoot.FullName "mingw64"
+                    # Check subdirectories
+                    $firstDir = Get-ChildItem $mingwTemp -Directory | Select-Object -First 1
+                    if ($firstDir) {
+                        $mingwExtracted = Join-Path $firstDir.FullName "mingw64"
+                    }
                 }
 
+                # Final fallback - just use what we got
+                if (-not (Test-Path $mingwExtracted)) {
+                    $allDirs = Get-ChildItem $mingwTemp -Directory -Recurse
+                    $mingwBin = $allDirs | Where-Object { (Test-Path (Join-Path $_.FullName "gcc.exe")) } | Select-Object -First 1
+                    if ($mingwBin) {
+                        $mingwExtracted = $mingwBin.Parent.FullName
+                    } else {
+                        throw "Could not find MinGW binaries in archive"
+                    }
+                }
+
+                # Copy to target
                 $targetPath = Join-Path $script:PortableDir "mingw64"
                 if (Test-Path $targetPath) { Remove-Item $targetPath -Recurse -Force }
-                Copy-Item "$mingwExtracted\*" $targetPath -Recurse -Force
+                New-Item -ItemType Directory -Path $targetPath -Force | Out-Null
 
+                if (Test-Path (Join-Path $mingwExtracted "bin\gcc.exe")) {
+                    Copy-Item "$mingwExtracted\*" $targetPath -Recurse -Force
+                } else {
+                    throw "gcc.exe not found at expected location"
+                }
+
+                # Cleanup
                 Remove-Item $mingwZip -Force -ErrorAction SilentlyContinue
                 Remove-Item $mingwTemp -Recurse -Force -ErrorAction SilentlyContinue
 
-                Write-Host "    MinGW installed (fallback version)" -ForegroundColor Green
+                # Verify
+                $gccPath = Join-Path $targetPath "bin\gcc.exe"
+                if (Test-Path $gccPath) {
+                    Write-Host "    MinGW installed successfully!" -ForegroundColor Green
+                    $success = $true
+                } else {
+                    throw "Verification failed"
+                }
+
             } catch {
-                Write-Host "    All download attempts failed. Please install MinGW manually:" -ForegroundColor Red
-                Write-Host "    https://github.com/niXman/mingw-builds-binaries/releases" -ForegroundColor Cyan
-                exit 1
+                Write-Host "      Failed: $_" -ForegroundColor Yellow
+                Remove-Item $mingwZip -Force -ErrorAction SilentlyContinue
+                if (Test-Path (Join-Path $script:PortableDir "mingw64")) {
+                    Remove-Item (Join-Path $script:PortableDir "mingw64") -Recurse -Force -ErrorAction SilentlyContinue
+                }
             }
+        }
+
+        if (-not $success) {
+            Write-Host ""
+            Write-Host "  All automatic download attempts failed!" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "  Quick fix - Choose one option:" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  Option 1 - Install MSYS2 (Recommended):" -ForegroundColor Cyan
+            Write-Host "    1. Download: https://github.com/msys2/msys2-installer/releases" -ForegroundColor White
+            Write-Host "    2. Run MSYS2 shell and execute:" -ForegroundColor White
+            Write-Host "       pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake" -ForegroundColor White
+            Write-Host "    3. Add C:\msys64\mingw64\bin to your PATH" -ForegroundColor White
+            Write-Host ""
+            Write-Host "  Option 2 - Manual MinGW download:" -ForegroundColor Cyan
+            Write-Host "    1. Download: https://github.com/brechtsanders/winlibs_mingw/releases" -ForegroundColor White
+            Write-Host "    2. Extract to: $script:PortableDir\mingw64" -ForegroundColor White
+            Write-Host ""
+            Write-Host "  After manual installation, run this script again." -ForegroundColor Yellow
+            exit 1
         }
     } else {
         Write-Host "  MinGW: already installed" -ForegroundColor Green
