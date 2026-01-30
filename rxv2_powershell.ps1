@@ -1,15 +1,16 @@
-#Requires -RunAsAdministrator
-
 <#
 .SYNOPSIS
     Complete RandomX v2 Benchmark Script for Windows (PowerShell)
 
 .DESCRIPTION
-    - Clones and compiles RandomX from source (requires Git + CMake + Visual Studio)
+    - AUTO-DOWNLOADS portable CMake and MinGW (no installation required)
+    - AUTO-DOWNLOADS Intel Power Gadget for power measurement (Intel CPUs only)
+    - AUTO-DOWNLOADS WinRing0 for MSR optimizations (requires Admin)
+    - Clones and compiles RandomX from source (requires Git)
     - Runs benchmark comparison between v1 and v2
     - Auto-detects optimal thread count and affinity
-    - Note: RAPL power measurement is Linux-only; not available on Windows
-    - Note: MSR optimizations require third-party tools on Windows (not included)
+    - Measures CPU package power during benchmarks
+    - Applies MSR optimizations for Intel/AMD CPUs
 
 .PARAMETER Runs
     Number of benchmark runs per version (default: 2)
@@ -20,16 +21,21 @@
 .PARAMETER OldCpu
     Old CPU mode (software AES, no AVX2)
 
+.PARAMETER NoMsr
+    Disable MSR optimizations
+
 .EXAMPLE
     .\rxv2_powershell.ps1
     .\rxv2_powershell.ps1 -Runs 10 -Nonces 500000
     .\rxv2_powershell.ps1 -OldCpu
+    .\rxv2_powershell.ps1 -NoMsr
 #>
 
 param(
     [int]$Runs = 2,
     [int]$Nonces = 1000000,
-    [switch]$OldCpu
+    [switch]$OldCpu,
+    [switch]$NoMsr
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,7 +64,35 @@ function Write-Banner {
 
 function Test-Command {
     param([string]$Name)
-    $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
+    # Check PATH first
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($cmd) { return $true }
+
+    # Check portable tools
+    if ($script:CMakeBin -and (Test-Path (Join-Path $script:CMakeBin "$Name.exe"))) {
+        return $true
+    }
+    if ($script:MinGWBin -and (Test-Path (Join-Path $script:MinGWBin "$Name.exe"))) {
+        return $true
+    }
+    return $false
+}
+
+function Get-PortableCommand {
+    param([string]$Name)
+
+    # Check PATH first
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    # Check portable tools
+    if ($script:CMakeBin -and (Test-Path (Join-Path $script:CMakeBin "$Name.exe"))) {
+        return Join-Path $script:CMakeBin "$Name.exe"
+    }
+    if ($script:MinGWBin -and (Test-Path (Join-Path $script:MinGWBin "$Name.exe"))) {
+        return Join-Path $script:MinGWBin "$Name.exe"
+    }
+    return $null
 }
 
 function Format-Sci {
@@ -67,6 +101,122 @@ function Format-Sci {
     if ($Value -ge 1e9) { return "{0:F2}e9" -f ($Value / 1e9) }
     if ($Value -ge 1e6) { return "{0:F2}e6" -f ($Value / 1e6) }
     return "{0:F2}" -f $Value
+}
+
+##############################
+# Portable Tools Management
+##############################
+
+$script:PortableDir = Join-Path $WorkDir "tools"
+$script:CMakeBin = $null
+$script:MinGWBin = $null
+$script:IPGDir = $null
+$script:IPGExe = $null
+$script:HasPowerGadget = $false
+$script:MsrEnabled = -not $NoMsr
+$script:MsrToolPath = $null
+$script:MsrDriverInstalled = $false
+$script:MsrBackupValues = @{}
+
+function Install-PortableTools {
+    Write-Banner "Setting up portable build tools..."
+
+    if (-not (Test-Path $script:PortableDir)) {
+        New-Item -ItemType Directory -Path $script:PortableDir -Force | Out-Null
+    }
+
+    # Check if already installed
+    $cmakePath = Join-Path $script:PortableDir "cmake\bin\cmake.exe"
+    $gccPath = Join-Path $script:PortableDir "mingw64\bin\gcc.exe"
+
+    $needCMake = -not (Test-Path $cmakePath)
+    $needMinGW = -not (Test-Path $gccPath)
+
+    if (-not $needCMake -and -not $needMinGW) {
+        Write-Host "  Portable tools already installed" -ForegroundColor Green
+        $script:CMakeBin = Join-Path $script:PortableDir "cmake\bin"
+        $script:MinGWBin = Join-Path $script:PortableDir "mingw64\bin"
+        return
+    }
+
+    Write-Host ""
+    Write-Host "  Downloading portable tools (this may take a minute)..." -ForegroundColor Yellow
+
+    # Download CMake portable
+    if ($needCMake) {
+        Write-Host "  Downloading CMake..."
+        $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-windows-x86_64.zip"
+        $cmakeZip = Join-Path $script:PortableDir "cmake.zip"
+
+        try {
+            Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeZip -UseBasicParsing
+            Write-Host "    Extracting CMake..."
+            Expand-Archive -Path $cmakeZip -DestinationPath $script:PortableDir -Force
+            Remove-Item $cmakeZip -Force
+
+            # Rename to simple "cmake" folder
+            $extracted = Get-ChildItem $script:PortableDir -Directory | Where-Object { $_.Name -match "cmake-.*-windows" } | Select-Object -First 1
+            if ($extracted) {
+                $targetPath = Join-Path $script:PortableDir "cmake"
+                if (Test-Path $targetPath) { Remove-Item $targetPath -Recurse -Force }
+                Move-Item $extracted.FullName $targetPath -Force
+            }
+
+            Write-Host "    CMake installed" -ForegroundColor Green
+        } catch {
+            Write-Host "    Failed to download CMake: $_" -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "  CMake: already installed" -ForegroundColor Green
+    }
+
+    # Download MinGW-w64
+    if ($needMinGW) {
+        Write-Host "  Downloading MinGW-w64..."
+        # Use the winlibs release (standalone MinGW-w64)
+        $mingwUrl = "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0-19.1 posix-14.2.0-mcf-seh-gc-19.1.0-msvcrt-rt_v12-multilib.zip"
+        $mingwZip = Join-Path $script:PortableDir "mingw.zip"
+
+        try {
+            # Show progress since this is a large download
+            $webClient = New-Object System.Net.WebClient
+            $webClient.DownloadFileAsync($mingwUrl, $mingwZip)
+            while ($webClient.IsBusy) {
+                $fileSize = (Get-Item $mingwZip -ErrorAction SilentlyContinue).Length / 1MB
+                Write-Host -NoNewline "`r    Downloading: $([math]::Round($fileSize, 1)) MB"
+                Start-Sleep -Milliseconds 200
+            }
+            Write-Host ""
+
+            Write-Host "    Extracting MinGW (this will take a few minutes)..."
+            $mingwTemp = Join-Path $script:PortableDir "mingw_temp"
+            Expand-Archive -Path $mingwZip -DestinationPath $mingwTemp -Force
+
+            # The archive has a mingw64 folder at root
+            $mingwExtracted = Join-Path $mingwTemp "mingw64"
+            $targetPath = Join-Path $script:PortableDir "mingw64"
+            if (Test-Path $targetPath) { Remove-Item $targetPath -Recurse -Force }
+            Move-Item $mingwExtracted $targetPath -Force
+
+            # Cleanup
+            Remove-Item $mingwZip -Force
+            Remove-Item $mingwTemp -Recurse -Force
+
+            Write-Host "    MinGW installed" -ForegroundColor Green
+        } catch {
+            Write-Host "    Failed to download MinGW: $_" -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "  MinGW: already installed" -ForegroundColor Green
+    }
+
+    $script:CMakeBin = Join-Path $script:PortableDir "cmake\bin"
+    $script:MinGWBin = Join-Path $script:PortableDir "mingw64\bin"
+
+    Write-Host ""
+    Write-Host "  Portable tools ready!" -ForegroundColor Green
 }
 
 ##############################
@@ -87,56 +237,16 @@ function Test-Dependencies {
         $missing = $true
     }
 
-    # CMake
-    if (Test-Command "cmake") {
-        Write-Host "  cmake: OK" -ForegroundColor Green
-    } else {
-        Write-Host "  cmake: NOT FOUND" -ForegroundColor Red
-        Write-Host "    Install from: https://cmake.org/download/"
-        $missing = $true
-    }
-
-    # Visual Studio / MSVC (check for cl.exe or MSBuild)
-    $hasCompiler = $false
-
-    # Check for Visual Studio via vswhere
-    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    if (Test-Path $vswhere) {
-        $vsPath = & $vswhere -latest -property installationPath 2>$null
-        if ($vsPath) {
-            Write-Host "  Visual Studio: OK ($vsPath)" -ForegroundColor Green
-            $hasCompiler = $true
-        }
-    }
-
-    if (-not $hasCompiler) {
-        # Check for cl.exe in PATH (Developer Command Prompt)
-        if (Test-Command "cl") {
-            Write-Host "  MSVC (cl.exe): OK" -ForegroundColor Green
-            $hasCompiler = $true
-        }
-    }
-
-    if (-not $hasCompiler) {
-        # Check for MinGW
-        if (Test-Command "g++") {
-            Write-Host "  MinGW (g++): OK" -ForegroundColor Green
-            $hasCompiler = $true
-        }
-    }
-
-    if (-not $hasCompiler) {
-        Write-Host "  C++ compiler: NOT FOUND" -ForegroundColor Red
-        Write-Host "    Install Visual Studio with 'Desktop development with C++' workload"
-        Write-Host "    Or install MinGW-w64"
-        $missing = $true
-    }
-
     if ($missing) {
         Write-Host ""
-        Write-Host "Please install missing dependencies and re-run." -ForegroundColor Red
+        Write-Host "Please install Git and re-run." -ForegroundColor Red
         exit 1
     }
+
+    # Install portable CMake and MinGW
+    Install-PortableTools
+
+    Write-Host "  All dependencies ready!" -ForegroundColor Green
 }
 
 ##############################
@@ -209,22 +319,18 @@ function Build-RandomX {
 
         Push-Location $buildDir
         try {
-            # Detect compiler and configure accordingly
-            if (Test-Command "g++") {
-                Write-Host "Building with MinGW..."
-                cmake -G "MinGW Makefiles" -DARCH=native ..
-                mingw32-make -j $env:NUMBER_OF_PROCESSORS
-            } else {
-                Write-Host "Building with Visual Studio..."
-                cmake -DARCH=native ..
-                cmake --build . --config Release -- /m
-            }
+            # Get portable tool paths
+            $cmakeExe = Get-PortableCommand "cmake"
+            $mingwMake = Join-Path $script:MinGWBin "mingw32-make.exe"
 
-            $binary = Join-Path $buildDir "Release\randomx-benchmark.exe"
-            if (-not (Test-Path $binary)) {
-                # MinGW puts it directly in build/
-                $binary = Join-Path $buildDir "randomx-benchmark.exe"
-            }
+            # Add MinGW to PATH for this session
+            $env:PATH = "$script:MinGWBin;$env:PATH"
+
+            Write-Host "Building with MinGW (portable)..."
+            & $cmakeExe -G "MinGW Makefiles" -DARCH=native ..
+            & $mingwMake -j $env:NUMBER_OF_PROCESSORS
+
+            $binary = Join-Path $buildDir "randomx-benchmark.exe"
 
             if (Test-Path $binary) {
                 Write-Host "Build complete: $binary" -ForegroundColor Green
@@ -327,16 +433,455 @@ function Enable-LargePages {
 }
 
 ##############################
+# Intel Power Gadget
+##############################
+
+function Install-IntelPowerGadget {
+    Write-Banner "Setting up Intel Power Gadget..."
+
+    # Check for Intel CPU
+    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    if ($cpu.Manufacturer -notmatch "Intel") {
+        Write-Host "  Not an Intel CPU - power measurement unavailable" -ForegroundColor Yellow
+        return
+    }
+
+    # Check for already installed IPG
+    $ipgPaths = @(
+        "${env:ProgramFiles}\Intel\Power Gadget 3.5",
+        "${env:ProgramFiles}\Intel\Power Gadget 3.6",
+        "${env:ProgramFiles}\Intel\Power Gadget",
+        "${env:ProgramFiles(x86)}\Intel\Power Gadget 3.5",
+        "${env:ProgramFiles(x86)}\Intel\Power Gadget 3.6",
+        "${env:ProgramFiles(x86)}\Intel\Power Gadget",
+        (Join-Path $script:PortableDir "IntelPowerGadget")
+    )
+
+    foreach ($path in $ipgPaths) {
+        $exe = Join-Path $path "PowerLog3.exe"
+        if (Test-Path $exe) {
+            $script:IPGDir = $path
+            $script:IPGExe = $exe
+            $script:HasPowerGadget = $true
+            Write-Host "  Intel Power Gadget: Found at $path" -ForegroundColor Green
+            return
+        }
+    }
+
+    # Try to download and install portable version
+    Write-Host "  Intel Power Gadget not found" -ForegroundColor Yellow
+    Write-Host "  Attempting to download portable version..." -ForegroundColor Yellow
+
+    $ipgPortableDir = Join-Path $script:PortableDir "IntelPowerGadget"
+    $ipgZip = Join-Path $script:PortableDir "IPG.zip"
+
+    try {
+        # IPG 3.6 download URL (direct download link)
+        $ipgUrl = "https://github.com/intel/Intel-Power-Gadget/releases/download/V3.6.0/Intel.Power.Gadget.3.6.0.zip"
+
+        Write-Host "  Downloading Intel Power Gadget..."
+        Invoke-WebRequest -Uri $ipgUrl -OutFile $ipgZip -UseBasicParsing
+
+        Write-Host "  Extracting..."
+        $ipgTemp = Join-Path $script:PortableDir "ipg_temp"
+        if (Test-Path $ipgTemp) { Remove-Item $ipgTemp -Recurse -Force }
+        New-Item -ItemType Directory -Path $ipgTemp -Force | Out-Null
+        Expand-Archive -Path $ipgZip -DestinationPath $ipgTemp -Force
+
+        # Find the PowerLog3.exe in extracted content
+        $extractedExe = Get-ChildItem $ipgTemp -Recurse -Filter "PowerLog3.exe" | Select-Object -First 1
+
+        if ($extractedExe) {
+            # Move to portable directory
+            if (Test-Path $ipgPortableDir) { Remove-Item $ipgPortableDir -Recurse -Force }
+            New-Item -ItemType Directory -Path $ipgPortableDir -Force | Out-Null
+
+            # Copy all needed files
+            $ipgBinDir = $extractedExe.DirectoryName
+            Copy-Item "$ipgBinDir\*" -Destination $ipgPortableDir -Recurse -Force
+
+            $script:IPGDir = $ipgPortableDir
+            $script:IPGExe = Join-Path $ipgPortableDir "PowerLog3.exe"
+
+            if (Test-Path $script:IPGExe) {
+                $script:HasPowerGadget = $true
+                Write-Host "  Intel Power Gadget: Installed portably" -ForegroundColor Green
+            } else {
+                Write-Host "  Intel Power Gadget: Failed to extract properly" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "  Intel Power Gadget: PowerLog3.exe not found in archive" -ForegroundColor Red
+            Write-Host "  Please install manually from: https://www.intel.com/content/www/us/en/developer/docs/energy-developer-kit/intel-power-gadget.html" -ForegroundColor Yellow
+        }
+
+        # Cleanup
+        Remove-Item $ipgZip -Force -ErrorAction SilentlyContinue
+        Remove-Item $ipgTemp -Recurse -Force -ErrorAction SilentlyContinue
+
+    } catch {
+        Write-Host "  Failed to download Intel Power Gadget: $_" -ForegroundColor Yellow
+        Write-Host "  Power measurement will be skipped" -ForegroundColor Yellow
+        Write-Host "  Manual install: https://www.intel.com/content/www/us/en/developer/docs/energy-developer-kit/intel-power-gadget.html" -ForegroundColor Yellow
+    }
+
+    if ($script:HasPowerGadget) {
+        Write-Host "  Power measurement enabled!" -ForegroundColor Green
+    } else {
+        Write-Host "  Continuing without power measurement..." -ForegroundColor Yellow
+    }
+}
+
+function Start-PowerLog {
+    param([string]$LogFile)
+
+    if (-not $script:HasPowerGadget -or -not $script:IPGExe) {
+        return $null
+    }
+
+    try {
+        # Start PowerLog3 in background
+        $process = Start-Process -FilePath $script:IPGExe `
+            -ArgumentList "-duration", "3600", "-file", $LogFile `
+            -WindowStyle Hidden -PassThru
+
+        return $process
+    } catch {
+        Write-Host "    Warning: Could not start power logging: $_" -ForegroundColor Yellow
+        return $null
+    }
+}
+
+function Stop-PowerLog {
+    param([System.Diagnostics.Process]$Process)
+
+    if ($Process -and -not $Process.HasExited) {
+        try {
+            $Process.Kill()
+            $Process.WaitForExit(5000)
+        } catch {
+            # Ignore errors when stopping
+        }
+    }
+}
+
+function Get-PowerStats {
+    param([string]$LogFile)
+
+    if (-not (Test-Path $LogFile)) {
+        return @{ AvgPower = 0; MaxPower = 0; Energy = 0 }
+    }
+
+    try {
+        $csv = Import-Csv $LogFile
+
+        # Power column is usually "Processor Power_0(Watt)" or similar
+        $powerColumn = $csv[0].PSObject.Properties.Name |
+                       Where-Object { $_ -match "Power.*Watt" } |
+                       Select-Object -First 1
+
+        if (-not $powerColumn) {
+            return @{ AvgPower = 0; MaxPower = 0; Energy = 0 }
+        }
+
+        $powers = $csv | ForEach-Object { [double]::$_.$powerColumn }
+
+        $avgPower = ($powers | Measure-Object -Average).Average
+        $maxPower = ($powers | Measure-Object -Maximum).Maximum
+
+        # Energy = avg power * time (hours) for kWh, or just avg power for display
+        # We'll use Joules = avg power * duration in seconds
+        $duration = $powers.Count * 0.1  # IPG samples every 100ms roughly
+        $energyJoules = $avgPower * $duration
+
+        return @{
+            AvgPower = [math]::Round($avgPower, 2)
+            MaxPower = [math]::Round($maxPower, 2)
+            Energy = [math]::Round($energyJoules, 0)
+        }
+    } catch {
+        return @{ AvgPower = 0; MaxPower = 0; Energy = 0 }
+    }
+}
+
+function Format-Power {
+    param([double]$Watts)
+
+    if ($Watts -eq 0) { return "N/A" }
+    if ($Watts -ge 1000) {
+        return "{0:F2} kW" -f ($Watts / 1000)
+    }
+    return "{0:F2} W" -f $Watts
+}
+
+##############################
+# MSR Optimizations (WinRing0)
+##############################
+
+function Test-Admin {
+    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Install-MSRTool {
+    Write-Banner "Setting up MSR access..."
+
+    if (-not $script:MsrEnabled) {
+        Write-Host "  MSR optimizations disabled (--no-msr flag)" -ForegroundColor Yellow
+        return
+    }
+
+    if (-not (Test-Admin)) {
+        Write-Host "  MSR optimizations require Administrator privileges" -ForegroundColor Yellow
+        Write-Host "  Please run PowerShell as Administrator" -ForegroundColor Yellow
+        Write-Host "  Continuing without MSR optimizations..." -ForegroundColor Yellow
+        $script:MsrEnabled = $false
+        return
+    }
+
+    $msrDir = Join-Path $script:PortableDir "msr"
+    if (-not (Test-Path $msrDir)) {
+        New-Item -ItemType Directory -Path $msrDir -Force | Out-Null
+    }
+
+    # Download pre-compiled WinRing0-based MSR tool
+    $msrTool = Join-Path $msrDir "msr-write.exe"
+
+    if (Test-Path $msrTool) {
+        $script:MsrToolPath = $msrTool
+        Write-Host "  MSR tool found at: $msrTool" -ForegroundColor Green
+        return
+    }
+
+    # Try to download a pre-built MSR tool from GitHub
+    Write-Host "  Attempting to download MSR tool..." -ForegroundColor Yellow
+
+    try {
+        # Using a pre-built msr-tools binary for Windows
+        $msrUrl = "https://github.com/georgewhewell/msr-tools/releases/download/v1.0/msr-tools-win.zip"
+        $msrZip = Join-Path $msrDir "msr.zip"
+
+        Write-Host "  Downloading from GitHub..."
+        Invoke-WebRequest -Uri $msrUrl -OutFile $msrZip -UseBasicParsing -ErrorAction Stop
+
+        Write-Host "  Extracting..."
+        Expand-Archive -Path $msrZip -DestinationPath $msrDir -Force
+
+        # Find the extracted exe
+        $extracted = Get-ChildItem $msrDir -Recurse -Filter "*.exe" | Where-Object { $_.Name -match "wrmsr|msr" } | Select-Object -First 1
+
+        if ($extracted) {
+            Copy-Item $extracted.FullName $msrTool -Force
+            $script:MsrToolPath = $msrTool
+            Write-Host "  MSR tool installed successfully!" -ForegroundColor Green
+        } else {
+            Write-Host "  Could not find MSR tool in archive" -ForegroundColor Yellow
+            throw "Tool not found"
+        }
+
+        Remove-Item $msrZip -Force -ErrorAction SilentlyContinue
+
+    } catch {
+        Write-Host "  Automatic MSR tool download failed: $_" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  For MSR optimizations, please use one of these tools manually:" -ForegroundColor Yellow
+        Write-Host "    - Throttlestop (Intel): https://www.techpowerup.com/download/techpowerup-throttlestop/" -ForegroundColor Cyan
+        Write-Host "    - CPU-Tweaker: https://www.cpu-tweaker.com/" -ForegroundColor Cyan
+        Write-Host "    - RyzenAdj (AMD): https://github.com/FlyGoat/RyzenAdj/releases" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  After applying MSR tweaks, run this script with -NoMsr flag" -ForegroundColor Yellow
+        $script:MsrEnabled = $false
+    }
+}
+
+function Get-CPUBrand {
+    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    if ($cpu.Manufacturer -match "AMD") {
+        return "AMD"
+    } elseif ($cpu.Manufacturer -match "Intel") {
+        return "Intel"
+    }
+    return "Unknown"
+}
+
+function Get-AMDZenGeneration {
+    $cpu = Get-WmiObject Win32_Processor | Select-Object -First 1
+
+    # Get CPU family and model from registry or WMI
+    $registryPath = "HKLM:\HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+    if (Test-Path $registryPath) {
+        $family = (Get-ItemProperty $registryPath).Identifier
+        if ($family -match "Family ([0-9]+)") {
+            $fam = [int]$Matches[1]
+            if ($fam -eq 25) { return "Zen3" }  # Family 25h = Zen3/Zen4
+            if ($fam -eq 26) { return "Zen5" }  # Family 26h = Zen5
+            if ($fam -eq 23) { return "Zen1/Zen2" }  # Family 17h = Zen1/Zen2
+        }
+    }
+
+    # Fallback: check CPU name
+    $cpuName = $cpu.Name
+    if ($cpuName -match "Ryzen\s*(\d+)") {
+        $gen = $Matches[1]
+        if ($gen -ge 9000) { return "Zen5" }
+        if ($gen -ge 7000) { return "Zen4" }
+        if ($gen -ge 5000) { return "Zen3" }
+        if ($gen -ge 3000) { return "Zen2" }
+        if ($gen -ge 1000) { return "Zen1" }
+    }
+
+    return "Unknown"
+}
+
+function Show-MSRInstructions {
+    Write-Banner "MSR Optimization Instructions"
+
+    $brand = Get-CPUBrand
+
+    if ($brand -eq "Intel") {
+        Write-Host "For Intel CPUs, disable hardware prefetchers:" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "Option 1 - Throttlestop (Recommended):"
+        Write-Host "  1. Download: https://www.techpowerup.com/download/techpowerup-throttlestop/"
+        Write-Host "  2. Open Throttlestop, go to Options"
+        Write-Host "  3. Check 'Disable Turbo' and set multiplier to max non-turbo"
+        Write-Host "  4. In 'TPU' section, disable prefetchers"
+        Write-Host ""
+        Write-Host "Option 2 - RWEverything:"
+        Write-Host "  1. Download: https://rweverywhere.com/"
+        Write-Host "  2. Use: RW.exe -Command=WriteMSR -Addr=0x1A4 -Value=0xF"
+        Write-Host "     (This disables prefetchers - MSR 0x1a4 = 0xf)"
+        Write-Host ""
+    } elseif ($brand -eq "AMD") {
+        $zen = Get-AMDZenGeneration
+        Write-Host "For AMD $zen CPUs:" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "Option 1 - RyzenAdj (for Ryzen):"
+        Write-Host "  1. Download: https://github.com/FlyGoat/RyzenAdj/releases"
+        Write-Host "  2. Run: ryzenadj --max-performance"
+        Write-Host ""
+        Write-Host "Option 2 - CPU-Tweaker:"
+        Write-Host "  1. Download: https://www.cpu-tweaker.com/"
+        Write-Host "  2. Apply RandomX preset if available"
+        Write-Host ""
+        Write-Host "Option 3 - BIOS Settings:"
+        Write-Host "  - Disable Global C-States"
+        Write-Host "  - Set CPPC to Preferred Cores"
+        Write-Host "  - Enable Precision Boost"
+        Write-Host ""
+    }
+
+    Write-Host "After applying MSR tweaks, run this script with -NoMsr flag"
+    Write-Host "to skip MSR setup and proceed directly to benchmarks."
+}
+
+function Write-MSR {
+    param(
+        [string]$Register,
+        [uint64]$Value
+    )
+
+    if (-not $script:MsrToolPath) {
+        return $false
+    }
+
+    try {
+        $regHex = "0x$Register"
+        $valHex = "0x$($Value.ToString('x'))"
+
+        # Try wrmsr syntax (wrmsr -a 0x1a4 0xf)
+        $output = & $script:MsrToolPath -a $regHex $valHex 2>&1
+        return $?
+    } catch {
+        return $false
+    }
+}
+
+function Apply-MSROptimizations {
+    if (-not $script:MsrEnabled) {
+        return
+    }
+
+    if ($script:MsrToolPath) {
+        $brand = Get-CPUBrand
+
+        Write-Host ""
+        Write-Host "Applying MSR optimizations..." -ForegroundColor Yellow
+
+        if ($brand -eq "Intel") {
+            Write-Host "  Intel CPU detected - disabling prefetchers (MSR 0x1a4 = 0xf)"
+            if (Write-MSR -Register "1a4" -Value 0xf) {
+                Write-Host "  MSR 0x1a4 set to 0xf (prefetchers disabled)" -ForegroundColor Green
+                $script:MsrDriverInstalled = $true
+            } else {
+                Write-Host "  Failed to write MSR - driver may not be loaded" -ForegroundColor Yellow
+                Show-MSRInstructions
+                $script:MsrEnabled = $false
+            }
+
+        } elseif ($brand -eq "AMD") {
+            $zen = Get-AMDZenGeneration
+            Write-Host "  AMD $zen detected"
+
+            # AMD MSR values from Linux script
+            $success = $true
+
+            if ($zen -eq "Zen4") {
+                Write-Host "  Applying Zen4 MSR optimizations..."
+                $success = $success -and (Write-MSR -Register "c0011020" -Value 0x4400000000000)
+                $success = $success -and (Write-MSR -Register "c0011021" -Value 0x4000000000040)
+                $success = $success -and (Write-MSR -Register "c0011022" -Value 0x8680000401570000)
+                $success = $success -and (Write-MSR -Register "c001102b" -Value 0x2040cc10)
+            } elseif ($zen -eq "Zen5") {
+                Write-Host "  Applying Zen5 MSR optimizations..."
+                $success = $success -and (Write-MSR -Register "c0011020" -Value 0x4400000000000)
+                $success = $success -and (Write-MSR -Register "c0011021" -Value 0x4000000000040)
+                $success = $success -and (Write-MSR -Register "c0011022" -Value 0x8680000401570000)
+                $success = $success -and (Write-MSR -Register "c001102b" -Value 0x2040cc10)
+            } elseif ($zen -eq "Zen3") {
+                Write-Host "  Applying Zen3 MSR optimizations..."
+                $success = $success -and (Write-MSR -Register "c0011020" -Value 0x4480000000000)
+                $success = $success -and (Write-MSR -Register "c0011021" -Value 0x1c000200000040)
+                $success = $success -and (Write-MSR -Register "c0011022" -Value 0xc000000401570000)
+                $success = $success -and (Write-MSR -Register "c001102b" -Value 0x2000cc10)
+            } else {
+                Write-Host "  Applying Zen1/Zen2 MSR optimizations..."
+                $success = $success -and (Write-MSR -Register "c0011020" -Value 0)
+                $success = $success -and (Write-MSR -Register "c0011021" -Value 0x40)
+                $success = $success -and (Write-MSR -Register "c0011022" -Value 0x1510000)
+                $success = $success -and (Write-MSR -Register "c001102b" -Value 0x2000cc16)
+            }
+
+            if ($success) {
+                Write-Host "  AMD MSR optimizations applied!" -ForegroundColor Green
+                $script:MsrDriverInstalled = $true
+            } else {
+                Write-Host "  Failed to apply all MSR settings" -ForegroundColor Yellow
+                Show-MSRInstructions
+                $script:MsrEnabled = $false
+            }
+
+        } else {
+            Write-Host "  Unknown CPU type - MSR optimizations not applied" -ForegroundColor Yellow
+            Show-MSRInstructions
+        }
+    } else {
+        # No MSR tool available - show instructions
+        Show-MSRInstructions
+    }
+}
+
+##############################
 # Benchmark
 ##############################
 
 function Run-Benchmarks {
     Write-Banner "Running benchmarks..."
 
-    # Find the binary
-    $binary = Join-Path $WorkDir "RandomX\build\Release\randomx-benchmark.exe"
+    # Find the binary (MinGW puts it in build/, VS in build/Release/)
+    $binary = Join-Path $WorkDir "RandomX\build\randomx-benchmark.exe"
     if (-not (Test-Path $binary)) {
-        $binary = Join-Path $WorkDir "RandomX\build\randomx-benchmark.exe"
+        $binary = Join-Path $WorkDir "RandomX\build\Release\randomx-benchmark.exe"
     }
     if (-not (Test-Path $binary)) {
         Write-Host "ERROR: randomx-benchmark.exe not found" -ForegroundColor Red
@@ -357,6 +902,13 @@ function Run-Benchmarks {
     }
 
     $resultsFile = Join-Path $WorkDir "benchmark_results_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
+    $powerLogDir = Join-Path $WorkDir "power_logs"
+
+    if ($script:HasPowerGadget) {
+        if (-not (Test-Path $powerLogDir)) {
+            New-Item -ItemType Directory -Path $powerLogDir -Force | Out-Null
+        }
+    }
 
     # Storage for metrics
     $v2Hashrates = @()
@@ -367,11 +919,18 @@ function Run-Benchmarks {
     $v1Crashes = 0
     $v2Success = 0
     $v1Success = 0
+    $v2Powers = @()  # Avg power per run
+    $v1Powers = @()  # Avg power per run
 
     Write-Host ""
     Write-Host "Binary: $binary"
     Write-Host "Base args: $($baseArgs -join ' ')"
     Write-Host "Results will be saved to: $resultsFile"
+    if ($script:HasPowerGadget) {
+        Write-Host "Power measurement: ENABLED"
+    } else {
+        Write-Host "Power measurement: DISABLED (Intel CPU + IPG required)"
+    }
     Write-Host ""
 
     # --- V2 runs ---
@@ -382,6 +941,15 @@ function Run-Benchmarks {
         Write-Host "--- Run $i/$Runs (v2) ---" -ForegroundColor Yellow
         $runArgs = $baseArgs + @("--v2")
         Write-Host "Command: $binary $($runArgs -join ' ')"
+
+        # Start power logging
+        $powerLogFile = $null
+        $powerProcess = $null
+        if ($script:HasPowerGadget) {
+            $powerLogFile = Join-Path $powerLogDir "v2_run_$i.csv"
+            $powerProcess = Start-PowerLog -LogFile $powerLogFile
+            Start-Sleep -Milliseconds 500  # Let IPG start
+        }
 
         $startTime = Get-Date
 
@@ -398,6 +966,16 @@ function Run-Benchmarks {
         $endTime = Get-Date
         $runtime = ($endTime - $startTime).TotalSeconds
 
+        # Stop power logging
+        Stop-PowerLog -Process $powerProcess
+        Start-Sleep -Milliseconds 200  # Let IPG finish writing
+
+        # Get power stats
+        $powerStats = @{ AvgPower = 0; MaxPower = 0; Energy = 0 }
+        if ($script:HasPowerGadget -and $powerLogFile) {
+            $powerStats = Get-PowerStats -LogFile $powerLogFile
+        }
+
         if ($exitCode -ne 0) {
             $v2Crashes++
             Write-Host ">>> Result: CRASH (exit code: $exitCode)" -ForegroundColor Red
@@ -409,7 +987,13 @@ function Run-Benchmarks {
                 $hashrate = [double]$Matches[1]
                 $v2Hashrates += $hashrate
                 $v2Times += $runtime
-                Write-Host ">>> Result: OK (Hashrate: $hashrate H/s)" -ForegroundColor Green
+                $v2Powers += $powerStats.AvgPower
+
+                $powerInfo = if ($script:HasPowerGadget -and $powerStats.AvgPower -gt 0) {
+                    " | Power: $(Format-Power $powerStats.AvgPower)"
+                } else { "" }
+
+                Write-Host ">>> Result: OK (Hashrate: $hashrate H/s$powerInfo)" -ForegroundColor Green
             } else {
                 Write-Host ">>> Result: OK (could not parse hashrate)" -ForegroundColor Yellow
             }
@@ -428,6 +1012,15 @@ function Run-Benchmarks {
         Write-Host "--- Run $i/$Runs (v1) ---" -ForegroundColor Yellow
         Write-Host "Command: $binary $($baseArgs -join ' ')"
 
+        # Start power logging
+        $powerLogFile = $null
+        $powerProcess = $null
+        if ($script:HasPowerGadget) {
+            $powerLogFile = Join-Path $powerLogDir "v1_run_$i.csv"
+            $powerProcess = Start-PowerLog -LogFile $powerLogFile
+            Start-Sleep -Milliseconds 500  # Let IPG start
+        }
+
         $startTime = Get-Date
 
         try {
@@ -443,6 +1036,16 @@ function Run-Benchmarks {
         $endTime = Get-Date
         $runtime = ($endTime - $startTime).TotalSeconds
 
+        # Stop power logging
+        Stop-PowerLog -Process $powerProcess
+        Start-Sleep -Milliseconds 200  # Let IPG finish writing
+
+        # Get power stats
+        $powerStats = @{ AvgPower = 0; MaxPower = 0; Energy = 0 }
+        if ($script:HasPowerGadget -and $powerLogFile) {
+            $powerStats = Get-PowerStats -LogFile $powerLogFile
+        }
+
         if ($exitCode -ne 0) {
             $v1Crashes++
             Write-Host ">>> Result: CRASH (exit code: $exitCode)" -ForegroundColor Red
@@ -454,7 +1057,13 @@ function Run-Benchmarks {
                 $hashrate = [double]$Matches[1]
                 $v1Hashrates += $hashrate
                 $v1Times += $runtime
-                Write-Host ">>> Result: OK (Hashrate: $hashrate H/s)" -ForegroundColor Green
+                $v1Powers += $powerStats.AvgPower
+
+                $powerInfo = if ($script:HasPowerGadget -and $powerStats.AvgPower -gt 0) {
+                    " | Power: $(Format-Power $powerStats.AvgPower)"
+                } else { "" }
+
+                Write-Host ">>> Result: OK (Hashrate: $hashrate H/s$powerInfo)" -ForegroundColor Green
             } else {
                 Write-Host ">>> Result: OK (could not parse hashrate)" -ForegroundColor Yellow
             }
@@ -469,6 +1078,7 @@ function Run-Benchmarks {
                     -V2Times $v2Times -V1Times $v1Times `
                     -V2Crashes $v2Crashes -V1Crashes $v1Crashes `
                     -V2Success $v2Success -V1Success $v1Success `
+                    -V2Powers $v2Powers -V1Powers $v1Powers `
                     -ResultsFile $resultsFile
 }
 
@@ -510,6 +1120,8 @@ function Display-Results {
         [int]$V1Crashes,
         [int]$V2Success,
         [int]$V1Success,
+        [double[]]$V2Powers,
+        [double[]]$V1Powers,
         [string]$ResultsFile
     )
 
@@ -530,8 +1142,24 @@ function Display-Results {
     $v1VmaesFmt = Format-Sci $v1Vmaes
     $v2VmaesFmt = Format-Sci $v2Vmaes
 
-    # Power measurement not available on Windows
-    $powerNote = "(power measurement requires Linux RAPL)"
+    # Power stats
+    $v2PowerStats = Get-Stats $V2Powers
+    $v1PowerStats = Get-Stats $V1Powers
+
+    # Efficiency (hashes per Joule)
+    $v1Efficiency = if ($v1PowerStats.Avg -gt 0 -and $v1Stats.Avg -gt 0) {
+        [math]::Round($v1Stats.Avg / $v1PowerStats.Avg, 2)
+    } else { "N/A" }
+    $v2Efficiency = if ($v2PowerStats.Avg -gt 0 -and $v2Stats.Avg -gt 0) {
+        [math]::Round($v2Stats.Avg / $v2PowerStats.Avg, 2)
+    } else { "N/A" }
+
+    # Power note
+    if ($script:HasPowerGadget -and $v1PowerStats.Avg -gt 0) {
+        $powerNote = "Power measured via Intel Power Gadget"
+    } else {
+        $powerNote = "Power measurement: Not available (non-Intel CPU or IPG not installed)"
+    }
 
     # --- Terminal output ---
     $output = @"
@@ -549,6 +1177,9 @@ V2 (with --v2 flag):
   Avg Hashrate:  $($v2Stats.Avg) H/s
   Relative:      ${v2RelSpeed}%
   VM+AES/s:      $v2VmaesFmt
+  Avg Power:     $(Format-Power $v2PowerStats.Avg)
+  Max Power:     $(Format-Power $v2PowerStats.Max)
+  Efficiency:    ${v2Efficiency} H/J
 
 V1 (without --v2 flag):
   Crashes:       $V1Crashes / $Runs
@@ -556,6 +1187,9 @@ V1 (without --v2 flag):
   Avg Hashrate:  $($v1Stats.Avg) H/s
   Relative:      ${v1RelSpeed}%
   VM+AES/s:      $v1VmaesFmt
+  Avg Power:     $(Format-Power $v1PowerStats.Avg)
+  Max Power:     $(Format-Power $v1PowerStats.Max)
+  Efficiency:    ${v1Efficiency} H/J
 
 ======================================
 "@
@@ -563,6 +1197,51 @@ V1 (without --v2 flag):
     Write-Host $output
 
     # --- GitHub markdown summary ---
+    $powerSection = if ($script:HasPowerGadget -and $v1PowerStats.Avg -gt 0) {
+        @"
+
+| Algorithm | Hashrate | Relative Speed | VM+AES/s | Power | Efficiency |
+|-----------|----------|----------------|----------|-------|------------|
+| RandomX v1 | $($v1Stats.Avg) | ${v1RelSpeed}% | $v1VmaesFmt | $(Format-Power $v1PowerStats.Avg) | ${v1Efficiency} H/J |
+| RandomX v2 | $($v2Stats.Avg) | ${v2RelSpeed}% | $v2VmaesFmt | $(Format-Power $v2PowerStats.Avg) | ${v2Efficiency} H/J |
+"@
+    } else {
+        @"
+
+| Algorithm | Hashrate | Relative Speed | VM+AES/s |
+|-----------|----------|----------------|----------|
+| RandomX v1 | $($v1Stats.Avg) | ${v1RelSpeed}% | $v1VmaesFmt |
+| RandomX v2 | $($v2Stats.Avg) | ${v2RelSpeed}% | $v2VmaesFmt |
+"@
+    }
+
+    $detailedStats = if ($script:HasPowerGadget -and $v1PowerStats.Avg -gt 0) {
+        @"
+
+| Metric | V1 | V2 |
+|--------|----|----|
+| Successful runs | $($v1Stats.Count) | $($v2Stats.Count) |
+| Hashrate (avg) | $($v1Stats.Avg) H/s | $($v2Stats.Avg) H/s |
+| Hashrate (std dev) | $($v1Stats.StdDev) H/s | $($v2Stats.StdDev) H/s |
+| Hashrate (min) | $($v1Stats.Min) H/s | $($v2Stats.Min) H/s |
+| Hashrate (max) | $($v1Stats.Max) H/s | $($v2Stats.Max) H/s |
+| Power (avg) | $(Format-Power $v1PowerStats.Avg) | $(Format-Power $v2PowerStats.Avg) |
+| Power (max) | $(Format-Power $v1PowerStats.Max) | $(Format-Power $v2PowerStats.Max) |
+| Efficiency | ${v1Efficiency} H/J | ${v2Efficiency} H/J |
+"@
+    } else {
+        @"
+
+| Metric | V1 | V2 |
+|--------|----|----|
+| Successful runs | $($v1Stats.Count) | $($v2Stats.Count) |
+| Hashrate (avg) | $($v1Stats.Avg) H/s | $($v2Stats.Avg) H/s |
+| Hashrate (std dev) | $($v1Stats.StdDev) H/s | $($v2Stats.StdDev) H/s |
+| Hashrate (min) | $($v1Stats.Min) H/s | $($v2Stats.Min) H/s |
+| Hashrate (max) | $($v1Stats.Max) H/s | $($v2Stats.Max) H/s |
+"@
+    }
+
     $ghSummary = @"
 
 ======================================
@@ -572,11 +1251,7 @@ GITHUB COPY-PASTE SUMMARY (Markdown)
 ### RandomX v2 Benchmark Results
 
 **$($script:CpuModel)**
-
-| Algorithm | Hashrate | Relative Speed | VM+AES/s |
-|-----------|----------|----------------|----------|
-| RandomX v1 | $($v1Stats.Avg) | ${v1RelSpeed}% | $v1VmaesFmt |
-| RandomX v2 | $($v2Stats.Avg) | ${v2RelSpeed}% | $v2VmaesFmt |
+$powerSection
 
 **Config:** threads=$($script:OptimalThreads), affinity=$($script:AffinityMask), init=$($script:InitThreads)
 
@@ -587,14 +1262,7 @@ GITHUB COPY-PASTE SUMMARY (Markdown)
 <details>
 <summary>Detailed Statistics</summary>
 
-| Metric | V1 | V2 |
-|--------|----|----|
-| Successful runs | $($v1Stats.Count) | $($v2Stats.Count) |
-| Hashrate (avg) | $($v1Stats.Avg) H/s | $($v2Stats.Avg) H/s |
-| Hashrate (std dev) | $($v1Stats.StdDev) H/s | $($v2Stats.StdDev) H/s |
-| Hashrate (min) | $($v1Stats.Min) H/s | $($v2Stats.Min) H/s |
-| Hashrate (max) | $($v1Stats.Max) H/s | $($v2Stats.Max) H/s |
-
+$detailedStats
 </details>
 
 ======================================
@@ -608,6 +1276,13 @@ GITHUB COPY-PASTE SUMMARY (Markdown)
     $fullOutput += ($V2Hashrates -join "`n")
     $fullOutput += "`n`nRaw V1 Hashrates:`n"
     $fullOutput += ($V1Hashrates -join "`n")
+
+    if ($script:HasPowerGadget) {
+        $fullOutput += "`n`nRaw V2 Power (Watts):`n"
+        $fullOutput += ($V2Powers -join "`n")
+        $fullOutput += "`n`nRaw V1 Power (Watts):`n"
+        $fullOutput += ($V1Powers -join "`n")
+    }
 
     $fullOutput | Out-File -FilePath $ResultsFile -Encoding UTF8
 
@@ -624,6 +1299,8 @@ function Main {
 
     Test-Dependencies
     Enable-LargePages
+    Install-IntelPowerGadget
+    Install-MSRTool
 
     # Check for updates and build if needed
     if (-not (Update-RandomX)) {
@@ -631,6 +1308,7 @@ function Main {
     }
 
     Get-OptimalSettings
+    Apply-MSROptimizations
     Run-Benchmarks
 
     Write-Host ""
