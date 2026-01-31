@@ -1004,7 +1004,7 @@ function Get-CPUBrand {
 }
 
 function Get-AMDZenGeneration {
-    $cpu = Get-WmiObject Win32_Processor | Select-Object -First 1
+    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
 
     # Get CPU family and model from registry or WMI
     $registryPath = "HKLM:\HARDWARE\DESCRIPTION\System\CentralProcessor\0"
