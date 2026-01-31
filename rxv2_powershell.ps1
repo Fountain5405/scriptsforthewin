@@ -540,16 +540,86 @@ function Enable-LargePages {
     if ($whoami -match "SeLockMemoryPrivilege") {
         $script:HasLargePages = $true
         Write-Host "  Large Pages: Enabled" -ForegroundColor Green
-    } else {
-        $script:HasLargePages = $false
-        Write-Host "  Large Pages: Not configured or not enabled" -ForegroundColor Yellow
-        Write-Host "  For best performance, enable 'Lock pages in memory' for your user:"
-        Write-Host "    1. Run secpol.msc (Local Security Policy)"
+        return
+    }
+
+    # Not enabled yet - attempt to grant the privilege automatically
+    Write-Host "  Large Pages: Not configured" -ForegroundColor Yellow
+    Write-Host "  Attempting to enable 'Lock pages in memory' policy..." -ForegroundColor Yellow
+
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+
+    try {
+        # Export current security policy
+        $tempCfg = Join-Path $env:TEMP "secpol_export.cfg"
+        $tempDb = Join-Path $env:TEMP "secpol_export.sdb"
+        secedit /export /cfg $tempCfg /quiet
+
+        # Read the exported policy
+        $content = Get-Content $tempCfg -Raw
+
+        if ($content -match "(SeLockMemoryPrivilege\s*=\s*)(.*)") {
+            $existing = $Matches[2].Trim()
+            # Add current user's SID if not already present
+            $currentSid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+            if ($existing -notmatch [regex]::Escape($currentSid)) {
+                $newValue = "$existing,*$currentSid"
+                $content = $content -replace "SeLockMemoryPrivilege\s*=\s*.*", "SeLockMemoryPrivilege = $newValue"
+            } else {
+                Write-Host "  SID already in policy but privilege not active (reboot needed)" -ForegroundColor Yellow
+                $script:HasLargePages = $false
+                Remove-Item $tempCfg -Force -ErrorAction SilentlyContinue
+                Write-Host ""
+                Write-Host "  Please reboot your computer, then run this script again." -ForegroundColor Red
+                Write-Host "  The 'Lock pages in memory' policy was previously configured but requires a reboot." -ForegroundColor Red
+                exit 1
+            }
+        } else {
+            # SeLockMemoryPrivilege line doesn't exist, add it under [Privilege Rights]
+            $currentSid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+            $content = $content -replace "(\[Privilege Rights\])", "`$1`r`nSeLockMemoryPrivilege = *$currentSid"
+        }
+
+        # Write modified policy
+        Set-Content $tempCfg -Value $content
+
+        # Import the modified policy
+        secedit /configure /db $tempDb /cfg $tempCfg /quiet
+
+        # Cleanup temp files
+        Remove-Item $tempCfg -Force -ErrorAction SilentlyContinue
+        Remove-Item $tempDb -Force -ErrorAction SilentlyContinue
+        # secedit also creates a log file
+        $seceditLog = Join-Path $env:TEMP "secpol_export.log"
+        Remove-Item $seceditLog -Force -ErrorAction SilentlyContinue
+
+        Write-Host "  'Lock pages in memory' policy granted to: $currentUser" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  *** A reboot is required for the policy to take effect. ***" -ForegroundColor Red
+        Write-Host ""
+
+        $response = Read-Host "  Reboot now? (y/n)"
+        if ($response -match "^[yY]") {
+            Write-Host "  Rebooting in 10 seconds... (Ctrl+C to cancel)" -ForegroundColor Yellow
+            Start-Sleep -Seconds 10
+            Restart-Computer -Force
+        } else {
+            Write-Host "  Please reboot manually, then run this script again." -ForegroundColor Yellow
+            exit 0
+        }
+
+    } catch {
+        Write-Host "  Failed to set policy automatically: $_" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  Manual steps to enable Large Pages:" -ForegroundColor Yellow
+        Write-Host "    1. Press Win+R, type secpol.msc, press Enter"
         Write-Host "    2. Navigate to: Local Policies > User Rights Assignment"
         Write-Host "    3. Double-click 'Lock pages in memory'"
-        Write-Host "    4. Add your user account"
-        Write-Host "    5. Log out and back in"
-        Write-Host "  Continuing without large pages..." -ForegroundColor Yellow
+        Write-Host "    4. Click 'Add User or Group', add your user account"
+        Write-Host "    5. Click OK, then reboot your computer"
+        Write-Host ""
+        Write-Host "  After rebooting, run this script again." -ForegroundColor Yellow
+        exit 1
     }
 }
 
