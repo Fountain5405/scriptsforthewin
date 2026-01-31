@@ -818,7 +818,7 @@ function Install-MSRTool {
     Write-Banner "Setting up MSR access..."
 
     if (-not $script:MsrEnabled) {
-        Write-Host "  MSR optimizations disabled (--no-msr flag)" -ForegroundColor Yellow
+        Write-Host "  MSR optimizations disabled (-NoMsr flag)" -ForegroundColor Yellow
         return
     }
 
@@ -835,8 +835,8 @@ function Install-MSRTool {
         New-Item -ItemType Directory -Path $msrDir -Force | Out-Null
     }
 
-    # Download pre-compiled WinRing0-based MSR tool
-    $msrTool = Join-Path $msrDir "msr-write.exe"
+    # Check if msr-cmd is already installed
+    $msrTool = Join-Path $msrDir "msr-cmd.exe"
 
     if (Test-Path $msrTool) {
         $script:MsrToolPath = $msrTool
@@ -844,43 +844,151 @@ function Install-MSRTool {
         return
     }
 
-    # Try to download a pre-built MSR tool from GitHub
-    Write-Host "  Attempting to download MSR tool..." -ForegroundColor Yellow
+    # Download cocafe/msr-utility (WinRing0-based wrmsr equivalent for Windows)
+    # Releases are .7z only, so we need 7-Zip to extract
+    Write-Host "  Downloading MSR tool (cocafe/msr-utility)..." -ForegroundColor Yellow
 
     try {
-        # Using a pre-built msr-tools binary for Windows
-        $msrUrl = "https://github.com/georgewhewell/msr-tools/releases/download/v1.0/msr-tools-win.zip"
-        $msrZip = Join-Path $msrDir "msr.zip"
+        $msr7z = Join-Path $msrDir "msr-cmd.7z"
 
-        Write-Host "  Downloading from GitHub..."
-        Invoke-WebRequest -Uri $msrUrl -OutFile $msrZip -UseBasicParsing -ErrorAction Stop
-
-        Write-Host "  Extracting..."
-        Expand-Archive -Path $msrZip -DestinationPath $msrDir -Force
-
-        # Find the extracted exe
-        $extracted = Get-ChildItem $msrDir -Recurse -Filter "*.exe" | Where-Object { $_.Name -match "wrmsr|msr" } | Select-Object -First 1
-
-        if ($extracted) {
-            Copy-Item $extracted.FullName $msrTool -Force
-            $script:MsrToolPath = $msrTool
-            Write-Host "  MSR tool installed successfully!" -ForegroundColor Green
-        } else {
-            Write-Host "  Could not find MSR tool in archive" -ForegroundColor Yellow
-            throw "Tool not found"
+        # Get latest release URL via GitHub API
+        $msrUrl = $null
+        try {
+            $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/cocafe/msr-utility/releases?per_page=3" -UseBasicParsing -ErrorAction Stop
+            foreach ($rel in $releases) {
+                foreach ($asset in $rel.assets) {
+                    if ($asset.name -match "msr-cmd.*\.7z") {
+                        $msrUrl = $asset.browser_download_url
+                        Write-Host "    Found release: $($asset.name)" -ForegroundColor Green
+                        break
+                    }
+                }
+                if ($msrUrl) { break }
+            }
+        } catch {
+            Write-Host "    GitHub API failed, using hardcoded URL" -ForegroundColor Yellow
         }
 
-        Remove-Item $msrZip -Force -ErrorAction SilentlyContinue
+        # Fallback URL
+        if (-not $msrUrl) {
+            $msrUrl = "https://github.com/cocafe/msr-utility/releases/download/20230811/msr-cmd_mingw.7z"
+        }
+
+        Write-Host "    Downloading msr-cmd..."
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $msrUrl -OutFile $msr7z -UseBasicParsing -ErrorAction Stop
+        $ProgressPreference = 'Continue'
+
+        # Need 7-Zip to extract .7z files
+        # Check for system 7-Zip first
+        $sevenZip = $null
+        $sevenZipPaths = @(
+            "${env:ProgramFiles}\7-Zip\7z.exe",
+            "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+        )
+        foreach ($path in $sevenZipPaths) {
+            if (Test-Path $path) {
+                $sevenZip = $path
+                break
+            }
+        }
+
+        # If no system 7-Zip, download standalone 7za.exe (console version, ~1MB)
+        if (-not $sevenZip) {
+            Write-Host "    7-Zip not found, downloading standalone extractor..."
+            $sevenZaDir = Join-Path $script:PortableDir "7zip"
+            $sevenZaExe = Join-Path $sevenZaDir "7za.exe"
+
+            if (-not (Test-Path $sevenZaExe)) {
+                if (-not (Test-Path $sevenZaDir)) {
+                    New-Item -ItemType Directory -Path $sevenZaDir -Force | Out-Null
+                }
+
+                # 7-Zip Extra (standalone console version)
+                $sevenZipUrl = "https://www.7-zip.org/a/7z2409-extra.7z"
+                # Since we can't extract .7z without 7-Zip, use the .zip distribution instead
+                # 7-Zip provides a standalone 7za.exe in the "extra" package
+                # Alternative: download from a direct exe source
+                $sevenZipZipUrl = "https://github.com/nicehash/NiceHashQuickMiner/raw/main/checksums/7za.exe"
+
+                # Try multiple sources for standalone 7za.exe
+                $sevenZaSources = @(
+                    "https://raw.githubusercontent.com/nicehash/NiceHashQuickMiner/main/checksums/7za.exe",
+                    "https://github.com/nicehash/NiceHashQuickMiner/raw/main/checksums/7za.exe"
+                )
+
+                $downloaded = $false
+                foreach ($src in $sevenZaSources) {
+                    try {
+                        $ProgressPreference = 'SilentlyContinue'
+                        Invoke-WebRequest -Uri $src -OutFile $sevenZaExe -UseBasicParsing -ErrorAction Stop
+                        $ProgressPreference = 'Continue'
+
+                        if ((Get-Item $sevenZaExe).Length -gt 100KB) {
+                            $downloaded = $true
+                            Write-Host "    7za.exe downloaded" -ForegroundColor Green
+                            break
+                        }
+                    } catch {
+                        continue
+                    }
+                }
+
+                if (-not $downloaded) {
+                    throw "Could not download 7za.exe for extraction"
+                }
+            }
+
+            $sevenZip = $sevenZaExe
+        }
+
+        # Extract the msr-cmd archive
+        Write-Host "    Extracting msr-cmd..."
+        $msrTemp = Join-Path $msrDir "temp"
+        if (Test-Path $msrTemp) { Remove-Item $msrTemp -Recurse -Force }
+        New-Item -ItemType Directory -Path $msrTemp -Force | Out-Null
+
+        & $sevenZip x $msr7z "-o$msrTemp" -y 2>&1 | Out-Null
+
+        # Find msr-cmd.exe in extracted files
+        $extracted = Get-ChildItem $msrTemp -Recurse -Filter "msr-cmd.exe" | Select-Object -First 1
+
+        if ($extracted) {
+            # Copy msr-cmd.exe and any companion files (WinRing0 driver/dll)
+            $srcDir = $extracted.DirectoryName
+            Copy-Item "$srcDir\*" -Destination $msrDir -Recurse -Force -ErrorAction SilentlyContinue
+            Copy-Item $extracted.FullName -Destination $msrTool -Force
+
+            $script:MsrToolPath = $msrTool
+            Write-Host "  MSR tool installed: $msrTool" -ForegroundColor Green
+        } else {
+            # Try finding any exe with 'msr' in the name
+            $altExe = Get-ChildItem $msrTemp -Recurse -Filter "*.exe" | Where-Object { $_.Name -match "msr" } | Select-Object -First 1
+            if ($altExe) {
+                $srcDir = $altExe.DirectoryName
+                Copy-Item "$srcDir\*" -Destination $msrDir -Recurse -Force -ErrorAction SilentlyContinue
+                Copy-Item $altExe.FullName -Destination $msrTool -Force
+                $script:MsrToolPath = $msrTool
+                Write-Host "  MSR tool installed: $msrTool" -ForegroundColor Green
+            } else {
+                throw "msr-cmd.exe not found in archive"
+            }
+        }
+
+        # Cleanup
+        Remove-Item $msr7z -Force -ErrorAction SilentlyContinue
+        Remove-Item $msrTemp -Recurse -Force -ErrorAction SilentlyContinue
 
     } catch {
-        Write-Host "  Automatic MSR tool download failed: $_" -ForegroundColor Yellow
+        Write-Host "  MSR tool setup failed: $_" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "  For MSR optimizations, please use one of these tools manually:" -ForegroundColor Yellow
-        Write-Host "    - Throttlestop (Intel): https://www.techpowerup.com/download/techpowerup-throttlestop/" -ForegroundColor Cyan
-        Write-Host "    - CPU-Tweaker: https://www.cpu-tweaker.com/" -ForegroundColor Cyan
-        Write-Host "    - RyzenAdj (AMD): https://github.com/FlyGoat/RyzenAdj/releases" -ForegroundColor Cyan
+        Write-Host "  For MSR optimizations, you can:" -ForegroundColor Yellow
+        Write-Host "    1. Install 7-Zip, then re-run this script" -ForegroundColor Cyan
+        Write-Host "    2. Download msr-cmd manually from: https://github.com/cocafe/msr-utility/releases" -ForegroundColor Cyan
+        Write-Host "       Extract to: $msrDir" -ForegroundColor Cyan
+        Write-Host "    3. Use -NoMsr flag to skip MSR optimizations" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "  After applying MSR tweaks, run this script with -NoMsr flag" -ForegroundColor Yellow
+        Write-Host "  Continuing without MSR optimizations..." -ForegroundColor Yellow
         $script:MsrEnabled = $false
     }
 }
@@ -978,10 +1086,14 @@ function Write-MSR {
 
     try {
         $regHex = "0x$Register"
-        $valHex = "0x$($Value.ToString('x'))"
+        # msr-cmd requires the 64-bit value split into EDX (upper 32 bits) and EAX (lower 32 bits)
+        $edx = [uint32](($Value -shr 32) -band 0xFFFFFFFF)
+        $eax = [uint32]($Value -band 0xFFFFFFFF)
+        $edxHex = "0x$($edx.ToString('x8'))"
+        $eaxHex = "0x$($eax.ToString('x8'))"
 
-        # Try wrmsr syntax (wrmsr -a 0x1a4 0xf)
-        $output = & $script:MsrToolPath -a $regHex $valHex 2>&1
+        # msr-cmd syntax: msr-cmd.exe -a write <register> <edx> <eax>
+        $output = & $script:MsrToolPath -a write $regHex $edxHex $eaxHex 2>&1
         return $?
     } catch {
         return $false
