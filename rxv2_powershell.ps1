@@ -113,6 +113,7 @@ $script:MinGWBin = $null
 $script:IPGDir = $null
 $script:IPGExe = $null
 $script:HasPowerGadget = $false
+$script:HasLargePages = $false
 $script:MsrEnabled = -not $NoMsr
 $script:MsrToolPath = $null
 $script:MsrDriverInstalled = $false
@@ -536,9 +537,11 @@ function Enable-LargePages {
 
     # Check if the current user has SeLockMemoryPrivilege
     $whoami = whoami /priv 2>$null
-    if ($whoami -match "SeLockMemoryPrivilege.*Enabled") {
+    if ($whoami -match "SeLockMemoryPrivilege") {
+        $script:HasLargePages = $true
         Write-Host "  Large Pages: Enabled" -ForegroundColor Green
     } else {
+        $script:HasLargePages = $false
         Write-Host "  Large Pages: Not configured or not enabled" -ForegroundColor Yellow
         Write-Host "  For best performance, enable 'Lock pages in memory' for your user:"
         Write-Host "    1. Run secpol.msc (Local Security Policy)"
@@ -1007,11 +1010,15 @@ function Run-Benchmarks {
     }
 
     # Build base arguments
-    $baseArgs = @("--mine", "--jit", "--largePages",
+    $baseArgs = @("--mine", "--jit",
                   "--threads", $script:OptimalThreads,
                   "--affinity", $script:AffinityMask,
                   "--init", $script:InitThreads,
                   "--nonces", $Nonces)
+
+    if ($script:HasLargePages) {
+        $baseArgs += "--largePages"
+    }
 
     if ($OldCpu) {
         $baseArgs += "--softAes"
