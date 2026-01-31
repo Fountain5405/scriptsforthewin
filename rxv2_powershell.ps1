@@ -175,19 +175,47 @@ function Install-PortableTools {
     if ($needMinGW) {
         Write-Host "  Downloading MinGW-w64..."
 
-        # Multiple reliable sources with fallback
-        $downloadSources = @(
+        # Try GitHub API first to find latest stable release URL dynamically
+        $downloadSources = @()
+
+        try {
+            Write-Host "    Querying GitHub for latest WinLibs release..."
+            $apiUrl = "https://api.github.com/repos/brechtsanders/winlibs_mingw/releases?per_page=20"
+            $releases = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing -ErrorAction Stop
+
+            foreach ($rel in $releases) {
+                $tag = $rel.tag_name
+                if ($tag -match "snapshot") { continue }
+                if ($tag -notmatch "posix") { continue }
+
+                foreach ($asset in $rel.assets) {
+                    if ($asset.name -match "x86_64" -and $asset.name.EndsWith(".zip") -and $asset.name -match "posix") {
+                        $downloadSources += @{
+                            Url  = $asset.browser_download_url
+                            Name = "WinLibs ($tag)"
+                        }
+                        break
+                    }
+                }
+                if ($downloadSources.Count -ge 2) { break }
+            }
+
+            if ($downloadSources.Count -gt 0) {
+                Write-Host "    Found $($downloadSources.Count) release(s) via GitHub API" -ForegroundColor Green
+            }
+        } catch {
+            Write-Host "    GitHub API query failed, using hardcoded URLs" -ForegroundColor Yellow
+        }
+
+        # Hardcoded fallback URLs (verified working as of Jan 2026)
+        $downloadSources += @(
             @{
-                Url = "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.1.0-18.0 posix-14.1.0-mcf-seh-gc-18.0.0-msvcrt-rt_v12-multilib.zip"
-                Name = "WinLibs (GCC 14.1)"
+                Url  = "https://github.com/brechtsanders/winlibs_mingw/releases/download/15.2.0posix-13.0.0-ucrt-r5/winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64ucrt-13.0.0-r5.zip"
+                Name = "WinLibs (GCC 15.2.0 fallback)"
             },
             @{
-                Url = "https://github.com/brechtsanders/winlibs_mingw/releases/download/13.2.0-17.0 posix-13.2.0-mcf-seh-gc-17.0.0-msvcrt-rt_v12-multilib.zip"
-                Name = "WinLibs (GCC 13.2)"
-            },
-            @{
-                Url = "https://github.com/brechtsanders/winlibs_mingw/releases/download/12.2.0-16.0 posix-12.2.0-mcf-seh-gc-16.0.0-msvcrt-rt_v11-multilib.zip"
-                Name = "WinLibs (GCC 12.2)"
+                Url  = "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.3.0posix-12.0.0-ucrt-r1/winlibs-x86_64-posix-seh-gcc-14.3.0-mingw-w64ucrt-12.0.0-r1.zip"
+                Name = "WinLibs (GCC 14.3.0 fallback)"
             }
         )
 
