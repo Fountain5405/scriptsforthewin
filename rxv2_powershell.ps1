@@ -893,53 +893,53 @@ function Install-MSRTool {
             }
         }
 
-        # If no system 7-Zip, download standalone 7za.exe (console version, ~1MB)
+        # If no system 7-Zip, download official 7zr.exe (standalone .7z extractor, ~600KB)
+        # 7zr.exe is the "reduced" standalone from the official 7-Zip GitHub (ip7z/7zip)
         if (-not $sevenZip) {
             Write-Host "    7-Zip not found, downloading standalone extractor..."
             $sevenZaDir = Join-Path $script:PortableDir "7zip"
-            $sevenZaExe = Join-Path $sevenZaDir "7za.exe"
+            $sevenZrExe = Join-Path $sevenZaDir "7zr.exe"
 
-            if (-not (Test-Path $sevenZaExe)) {
+            if (-not (Test-Path $sevenZrExe)) {
                 if (-not (Test-Path $sevenZaDir)) {
                     New-Item -ItemType Directory -Path $sevenZaDir -Force | Out-Null
                 }
 
-                # 7-Zip Extra (standalone console version)
-                $sevenZipUrl = "https://www.7-zip.org/a/7z2409-extra.7z"
-                # Since we can't extract .7z without 7-Zip, use the .zip distribution instead
-                # 7-Zip provides a standalone 7za.exe in the "extra" package
-                # Alternative: download from a direct exe source
-                $sevenZipZipUrl = "https://github.com/nicehash/NiceHashQuickMiner/raw/main/checksums/7za.exe"
-
-                # Try multiple sources for standalone 7za.exe
-                $sevenZaSources = @(
-                    "https://raw.githubusercontent.com/nicehash/NiceHashQuickMiner/main/checksums/7za.exe",
-                    "https://github.com/nicehash/NiceHashQuickMiner/raw/main/checksums/7za.exe"
+                # Try multiple sources for a standalone 7-Zip extractor
+                $sevenZrSources = @(
+                    # Official 7-Zip GitHub release (Igor Pavlov's repo)
+                    "https://github.com/ip7z/7zip/releases/download/25.01/7zr.exe",
+                    # 7-zip.org direct link
+                    "https://www.7-zip.org/a/7zr.exe",
+                    # Third-party mirror of 7za.exe (v23.01)
+                    "https://raw.githubusercontent.com/a-sync/7z-extra/master/x64/7za.exe"
                 )
 
                 $downloaded = $false
-                foreach ($src in $sevenZaSources) {
+                foreach ($src in $sevenZrSources) {
                     try {
+                        Write-Host "    Trying: $src"
                         $ProgressPreference = 'SilentlyContinue'
-                        Invoke-WebRequest -Uri $src -OutFile $sevenZaExe -UseBasicParsing -ErrorAction Stop
+                        Invoke-WebRequest -Uri $src -OutFile $sevenZrExe -UseBasicParsing -ErrorAction Stop
                         $ProgressPreference = 'Continue'
 
-                        if ((Get-Item $sevenZaExe).Length -gt 100KB) {
+                        if ((Get-Item $sevenZrExe).Length -gt 100KB) {
                             $downloaded = $true
-                            Write-Host "    7za.exe downloaded" -ForegroundColor Green
+                            Write-Host "    7-Zip extractor downloaded" -ForegroundColor Green
                             break
                         }
                     } catch {
+                        Write-Host "    Failed: $_" -ForegroundColor Yellow
                         continue
                     }
                 }
 
                 if (-not $downloaded) {
-                    throw "Could not download 7za.exe for extraction"
+                    throw "Could not download 7-Zip extractor. Install 7-Zip manually or place 7zr.exe in: $sevenZaDir"
                 }
             }
 
-            $sevenZip = $sevenZaExe
+            $sevenZip = $sevenZrExe
         }
 
         # Extract the msr-cmd archive
